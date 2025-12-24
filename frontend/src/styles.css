@@ -17,6 +17,10 @@
     linear-gradient(160deg, var(--bg), var(--bg-deep) 55%, #000911);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -99,6 +103,7 @@ body {
   color: var(--text);
   text-decoration: none;
   position: relative;
+  scroll-behavior: smooth;
 }
 
 .nav a::after {

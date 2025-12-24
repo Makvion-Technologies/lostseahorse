@@ -25,9 +25,9 @@ root.innerHTML = `
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Dive into the bioluminescent blue</p>
-          <h1>Explore a living ocean sculpted in 3D.</h1>
-          <p class="lede">Glide with rays, weave through coral cathedrals, and follow the lost seahorse in a world that reacts to every ripple.</p>
+          <p class="eyebrow">Guide the lost seahorse home</p>
+          <h1>3D Open-world undersea learning, in motion.</h1>
+          <p class="lede">Steer a baby seahorse through an expanding ocean, meet real species, unlock facts, and follow the story back to family.</p>
           <div class="cta-row">
             <a class="cta primary" href="/game.html">Play Now</a>
             <a class="cta ghost" href="#features">Preview the world</a>
@@ -42,22 +42,22 @@ root.innerHTML = `
           <div class="card-header">
             <div class="glow-dot"></div>
             <div>
-              <p class="card-kicker">Exclusive Snapshot</p>
-              <p class="card-title">Crystal Bloom Ridge</p>
+              <p class="card-kicker">Story Glimpse</p>
+              <p class="card-title">Coral Classroom</p>
             </div>
           </div>
           <div class="card-body">
             <div class="card-stat">
               <span>Depth</span>
-              <strong>42m</strong>
+              <strong>38m</strong>
             </div>
             <div class="card-stat">
-              <span>Currents</span>
-              <strong>Soft Drift</strong>
+              <span>Waypoint</span>
+              <strong>Family Trail</strong>
             </div>
             <div class="card-stat">
-              <span>Creatures</span>
-              <strong>Jelly Choir</strong>
+              <span>Discovery</span>
+              <strong>Leafy Seahorse</strong>
             </div>
           </div>
           <div class="card-footer">
@@ -66,7 +66,7 @@ root.innerHTML = `
               <span class="bubble b2"></span>
               <span class="bubble b3"></span>
             </div>
-            <p>Hold your breath. The ridge sings when you arrive.</p>
+            <p>Approach to unlock its name, habitat, and a hint toward the missing parents.</p>
           </div>
         </div>
       </section>
@@ -74,24 +74,24 @@ root.innerHTML = `
       <section id="features" class="panel features">
         <div class="panel-header">
           <p class="eyebrow">Why dive here</p>
-          <h2>Water that listens to you.</h2>
-          <p class="lede">Adaptive tides, shimmering caustics, and reactive flora make every session unique.</p>
+          <h2>Learn as you explore.</h2>
+          <p class="lede">Every encounter brings a “learn more” pop-up with species names, habitats, uses, and mysteries of the deep.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
             <div class="icon-ring"><span>🌊</span></div>
             <h3>Tactile Currents</h3>
-            <p>Every movement sculpts real-time waves powered by GPU particles.</p>
+            <p>Swim a living ocean—currents, caustics, and coral respond as you guide the seahorse.</p>
           </article>
           <article class="feature-card">
             <div class="icon-ring"><span>🐚</span></div>
             <h3>Living Reefs</h3>
-            <p>Corals bloom, retreat, and glow based on your path through the water.</p>
+            <p>Discover real species; get instant scientific names, habitats, and human connections.</p>
           </article>
           <article class="feature-card">
             <div class="icon-ring"><span>💠</span></div>
             <h3>Biolum Trails</h3>
-            <p>Leave sparkling ribbons behind as you chase currents and light.</p>
+            <p>Follow glowing clues to reunite the seahorse family while leaving shimmering wakes.</p>
           </article>
         </div>
       </section>
@@ -99,23 +99,23 @@ root.innerHTML = `
       <section id="modes" class="panel modes">
         <div class="panel-header">
           <p class="eyebrow">Choose your flow</p>
-          <h2>From chill drift to challenge dives.</h2>
+          <h2>Explore, learn, rescue.</h2>
         </div>
         <div class="mode-cards">
           <div class="mode-card">
-            <h3>Zen Drift</h3>
-            <p>Float with soft currents, meditative soundscapes, and endless blue.</p>
-            <span class="chip">Relax</span>
+            <h3>Discovery Swim</h3>
+            <p>Glide slowly, meet species, and read quick fact cards as you explore.</p>
+            <span class="chip">Learn</span>
           </div>
           <div class="mode-card">
             <h3>Beacon Hunt</h3>
-            <p>Track biolum signals, collect shells, and race playful dolphins.</p>
+            <p>Track biolum signals and uncover new creatures that expand the world map.</p>
             <span class="chip accent">Explore</span>
           </div>
           <div class="mode-card">
-            <h3>Abyss Run</h3>
-            <p>Descend into stormy trenches with reactive storms and glowing caverns.</p>
-            <span class="chip">Challenge</span>
+            <h3>Rescue Run</h3>
+            <p>Chase the family trail through trenches, storms, and glowing caverns.</p>
+            <span class="chip">Story</span>
           </div>
         </div>
       </section>
@@ -143,13 +143,7 @@ root.innerHTML = `
           <div class="brand-sub">Ocean-built experiences</div>
         </div>
       </div>
-      <div class="footer-links">
-        <a href="#features">World</a>
-        <a href="#modes">Modes</a>
-        <a href="#community">Community</a>
-        <a href="/game.html">Play Now</a>
-      </div>
-      <p class="footer-note">Breathe in the blue. Crafted with Three.js and imagination.</p>
+      <p class="footer-note">Breathe in the blue. Crafted with imagination.</p>
     </footer>
   </div>
 `;
@@ -157,6 +151,17 @@ root.innerHTML = `
 const canvas = document.querySelector('#ocean-canvas');
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x031727, 0.06);
+
+// Smooth scroll for in-page nav links
+document.querySelectorAll('.nav a[href^="#"]').forEach((link) => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const target = document.querySelector(link.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
