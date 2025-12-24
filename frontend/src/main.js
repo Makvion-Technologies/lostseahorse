@@ -1,4 +1,4 @@
-import './styles.css';
+﻿import './styles.css';
 import * as THREE from 'three';
 
 const root = document.querySelector('#app');
@@ -18,6 +18,7 @@ root.innerHTML = `
         <a href="#features">World</a>
         <a href="#modes">Modes</a>
         <a href="#community">Community</a>
+        <a href="#minigames">Mini Games</a>
         <a class="pill" href="/game.html">Play Now</a>
       </nav>
     </header>
@@ -75,21 +76,21 @@ root.innerHTML = `
         <div class="panel-header">
           <p class="eyebrow">Why dive here</p>
           <h2>Learn as you explore.</h2>
-          <p class="lede">Every encounter brings a “learn more” pop-up with species names, habitats, uses, and mysteries of the deep.</p>
+          <p class="lede">Every encounter brings a â€œlearn moreâ€ pop-up with species names, habitats, uses, and mysteries of the deep.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
-            <div class="icon-ring"><span>🌊</span></div>
+            <div class="icon-ring"><span aria-hidden="true">🌊</span></div>
             <h3>Tactile Currents</h3>
-            <p>Swim a living ocean—currents, caustics, and coral respond as you guide the seahorse.</p>
+            <p>Swim a living oceanâ€”currents, caustics, and coral respond as you guide the seahorse.</p>
           </article>
           <article class="feature-card">
-            <div class="icon-ring"><span>🐚</span></div>
+            <div class="icon-ring"><span aria-hidden="true">🐚</span></div>
             <h3>Living Reefs</h3>
             <p>Discover real species; get instant scientific names, habitats, and human connections.</p>
           </article>
           <article class="feature-card">
-            <div class="icon-ring"><span>💠</span></div>
+            <div class="icon-ring"><span aria-hidden="true">💠</span></div>
             <h3>Biolum Trails</h3>
             <p>Follow glowing clues to reunite the seahorse family while leaving shimmering wakes.</p>
           </article>
@@ -130,6 +131,31 @@ root.innerHTML = `
           <div class="cta-stack">
             <a class="cta primary" href="/game.html">Play Now</a>
             <a class="cta ghost" href="#top">Back to top</a>
+          </div>
+        </div>
+      </section>
+
+      <section id="minigames" class="panel minigames">
+        <div class="panel-header">
+          <p class="eyebrow">Quick Dives</p>
+          <h2>Mini Games to sharpen your fins.</h2>
+          <p class="lede">Short, snappy challenges that keep your reflexes sharp and your ocean knowledge fresh.</p>
+        </div>
+        <div class="mode-cards">
+          <div class="mode-card">
+            <h3>Current Runner</h3>
+            <p>Ride shifting currents, dodge reefs, and chain boosts to set a distance record.</p>
+            <span class="chip accent">Arcade</span>
+          </div>
+          <div class="mode-card">
+            <h3>Flash ID</h3>
+            <p>Match silhouettes to real species under a timer—earn lore snippets with each streak.</p>
+            <span class="chip">Learn</span>
+          </div>
+          <div class="mode-card">
+            <h3>Biolum Trail</h3>
+            <p>Follow flickering light cues in the dark, weaving tight turns to keep the trail alive.</p>
+            <span class="chip accent">Reflex</span>
           </div>
         </div>
       </section>
@@ -618,3 +644,4 @@ function animate() {
 }
 
 animate();
+

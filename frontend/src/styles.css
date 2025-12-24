@@ -379,6 +379,8 @@ body {
   border-radius: 18px;
   backdrop-filter: blur(12px);
   transition: transform 180ms ease, border-color 180ms ease;
+  transform-style: preserve-3d;
+  perspective: 700px;
 }
 
 .feature-card:hover {
@@ -387,13 +389,69 @@ body {
 }
 
 .icon-ring {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.1));
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(94, 226, 255, 0.35), rgba(54, 209, 220, 0.12));
+  border: 1px solid rgba(126, 243, 255, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 0 28px rgba(126, 243, 255, 0.25);
   display: grid;
   place-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  perspective: 600px;
+  animation: icon-bob 4.5s ease-in-out infinite;
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+
+.icon-ring::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.4), transparent 45%);
+  filter: blur(8px);
+  transform: translateZ(12px) rotate(15deg);
+  opacity: 0.7;
+}
+
+.icon-ring::after {
+  content: '';
+  position: absolute;
+  width: 140%;
+  height: 140%;
+  background: conic-gradient(from 45deg, rgba(126, 243, 255, 0.35), rgba(91, 141, 243, 0.12), rgba(126, 243, 255, 0.35));
+  mix-blend-mode: screen;
+  opacity: 0.25;
+  animation: icon-spin 10s linear infinite;
+}
+
+.icon-ring span {
+  font-size: 30px;
+  transform: translateZ(10px);
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.35), 0 0 14px rgba(126, 243, 255, 0.8);
+  transition: transform 220ms ease;
+}
+
+.feature-card:hover .icon-ring {
+  transform: translateY(-4px) rotateX(10deg) rotateY(-6deg) scale(1.05);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), inset 0 0 32px rgba(126, 243, 255, 0.35);
+}
+
+.feature-card:hover .icon-ring span {
+  transform: translateZ(14px) rotateZ(-4deg);
+}
+
+@keyframes icon-bob {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes icon-spin {
+  from { transform: rotateZ(0deg); }
+  to { transform: rotateZ(360deg); }
 }
 
 .modes .mode-cards {
@@ -401,6 +459,19 @@ body {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
   margin-top: 20px;
+}
+
+.minigames .mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .minigames .mode-cards {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
 }
 
 .mode-card {
