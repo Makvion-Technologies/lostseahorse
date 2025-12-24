@@ -202,6 +202,256 @@ const dummy = new THREE.Object3D();
 const bubbleSpeed = new Float32Array(bubbleCount);
 const bubblePhase = new Float32Array(bubbleCount);
 const bubbleScale = new Float32Array(bubbleCount);
+const fishGeometry = new THREE.PlaneGeometry(1.15, 0.6);
+const fishPalettes = [
+  { body: ['rgba(126,243,255,0.9)', 'rgba(91,141,243,0.7)', 'rgba(54,209,220,0.6)'], fin: 'rgba(126,243,255,0.55)', eye: '#dff9ff' },
+  { body: ['rgba(255,215,128,0.85)', 'rgba(255,128,149,0.7)', 'rgba(255,255,255,0.5)'], fin: 'rgba(255,175,120,0.6)', eye: '#fff4d6' },
+  { body: ['rgba(160,255,199,0.85)', 'rgba(91,229,193,0.7)', 'rgba(60,146,255,0.5)'], fin: 'rgba(137,255,203,0.55)', eye: '#e2fffd' }
+];
+let rippleMesh;
+let rippleMaterial;
+let ripplePhase;
+const rippleObj = new THREE.Object3D();
+
+function createFishTexture(palette) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = ctx.createLinearGradient(24, 64, 230, 64);
+  gradient.addColorStop(0, palette.body[0]);
+  gradient.addColorStop(0.45, palette.body[1]);
+  gradient.addColorStop(1, palette.body[2]);
+
+  // body
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(230, 64);
+  ctx.quadraticCurveTo(190, 24, 140, 32);
+  ctx.quadraticCurveTo(90, 26, 54, 48);
+  ctx.lineTo(30, 30);
+  ctx.lineTo(18, 64);
+  ctx.lineTo(30, 98);
+  ctx.lineTo(54, 80);
+  ctx.quadraticCurveTo(90, 102, 140, 96);
+  ctx.quadraticCurveTo(190, 104, 230, 64);
+  ctx.closePath();
+  ctx.fill();
+
+  // tail
+  ctx.fillStyle = palette.body[1];
+  ctx.beginPath();
+  ctx.moveTo(18, 64);
+  ctx.lineTo(0, 32);
+  ctx.lineTo(0, 96);
+  ctx.closePath();
+  ctx.fill();
+
+  // dorsal fin
+  ctx.fillStyle = palette.fin;
+  ctx.beginPath();
+  ctx.moveTo(120, 40);
+  ctx.lineTo(145, 10);
+  ctx.lineTo(168, 44);
+  ctx.closePath();
+  ctx.fill();
+
+  // ventral fin
+  ctx.beginPath();
+  ctx.moveTo(120, 88);
+  ctx.lineTo(145, 118);
+  ctx.lineTo(168, 84);
+  ctx.closePath();
+  ctx.fill();
+
+  // pectoral fin
+  ctx.beginPath();
+  ctx.moveTo(160, 64);
+  ctx.quadraticCurveTo(182, 72, 170, 90);
+  ctx.quadraticCurveTo(152, 80, 160, 64);
+  ctx.fill();
+
+  // stripes
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.lineWidth = 3;
+  [90, 130, 170, 200].forEach((x) => {
+    ctx.beginPath();
+    ctx.moveTo(x, 50);
+    ctx.lineTo(x - 12, 78);
+    ctx.stroke();
+  });
+
+  // eye
+  ctx.fillStyle = palette.eye;
+  ctx.beginPath();
+  ctx.arc(210, 60, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(20,40,60,0.8)';
+  ctx.beginPath();
+  ctx.arc(213, 60, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // gill line
+  ctx.strokeStyle = 'rgba(20,40,60,0.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(190, 52);
+  ctx.quadraticCurveTo(184, 64, 190, 76);
+  ctx.stroke();
+
+  // speckles
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  for (let i = 0; i < 16; i++) {
+    const sx = 70 + Math.random() * 120;
+    const sy = 44 + Math.random() * 36;
+    const r = 1 + Math.random() * 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // highlight
+  const shine = ctx.createLinearGradient(70, 40, 200, 80);
+  shine.addColorStop(0, 'rgba(255,255,255,0.16)');
+  shine.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = shine;
+  ctx.beginPath();
+  ctx.ellipse(140, 60, 90, 30, Math.PI / 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+const fishGroups = [];
+
+function spawnFishGroups() {
+  const counts = [2, 1, 1]; // keep just a few unique swimmers
+  const totalFish = counts.reduce((a, b) => a + b, 0);
+  fishPalettes.forEach((palette, idx) => {
+    const texture = createFishTexture(palette);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending
+    });
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          'void main() {',
+          'attribute float instPhase;\nuniform float uTime;\nvoid main() {'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `
+          #include <begin_vertex>
+          float tailMask = smoothstep(0.35, 1.0, 1.0 - uv.x);
+          float gate = smoothstep(0.15, 0.6, (sin(uTime * 1.0 + instPhase * 0.2) + 1.0) * 0.5);
+          float baseWave = sin(uTime * 4.0 + instPhase * 0.8) * 0.07;
+          float microWave = sin(uTime * 6.0 + instPhase * 1.3) * 0.03;
+          float tailDribble = (baseWave + microWave) * tailMask * gate;
+          transformed.y += tailDribble * 0.7;
+          transformed.x -= tailDribble * 0.28;
+          float headMask = smoothstep(0.0, 0.22, uv.x);
+          float headGate = smoothstep(0.2, 0.65, (sin(uTime * 0.9 + instPhase * 0.2) + 1.0) * 0.5);
+          float headNod = sin(uTime * 2.0 + instPhase * 0.35) * 0.018 * headGate;
+          transformed.y += headNod * headMask;
+          transformed.x += headNod * 0.18 * headMask;
+          `
+        );
+      material.userData.shader = shader;
+    };
+    material.customProgramCacheKey = () => 'fish-tail-dribble';
+    const count = counts[idx];
+    const geo = fishGeometry.clone();
+    const mesh = new THREE.InstancedMesh(geo, material, count);
+    const speed = new Float32Array(count);
+    const phase = new Float32Array(count);
+    const yOffset = new Float32Array(count);
+    const dir = new Float32Array(count);
+    const instPhase = new Float32Array(count);
+
+    for (let i = 0; i < count; i++) {
+      const d = Math.random() > 0.5 ? 1 : -1;
+      dir[i] = d;
+      speed[i] = 0.85 + Math.random() * 0.9;
+      phase[i] = Math.random() * Math.PI * 2;
+      instPhase[i] = Math.random() * Math.PI * 2;
+      yOffset[i] = Math.random() * 2 - 1;
+      dummy.position.set((Math.random() - 0.5) * 20, yOffset[i], (Math.random() - 0.5) * 12);
+      dummy.rotation.set(0, d === 1 ? 0 : Math.PI, 0);
+      const scale = 0.9 + Math.random() * 0.7;
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    geo.setAttribute('instPhase', new THREE.InstancedBufferAttribute(instPhase, 1));
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+    fishGroups.push({ mesh, speed, phase, yOffset, dir });
+  });
+  // wakes for each fish
+  const rippleGeometry = new THREE.PlaneGeometry(1.6, 1.0);
+  ripplePhase = new Float32Array(totalFish);
+  rippleMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color(0x5ee2ff) }
+    },
+    vertexShader: `
+      attribute float instPhase;
+      uniform float uTime;
+      varying vec2 vUv;
+      varying float vAlpha;
+      void main() {
+        vUv = uv;
+        float pulse = sin(uTime * 2.0 + instPhase) * 0.5 + 0.5;
+        float scale = mix(0.5, 1.8, pulse);
+        vec3 pos = position;
+        pos.xy *= scale;
+        vAlpha = smoothstep(1.0, 0.15, pulse) * 0.45;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      varying vec2 vUv;
+      varying float vAlpha;
+      void main() {
+        vec2 c = vUv - 0.5;
+        float d = length(c);
+        float ring = smoothstep(0.5, 0.2, d);
+        float alpha = ring * vAlpha;
+        if (alpha < 0.02) discard;
+        gl_FragColor = vec4(uColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  });
+  rippleMesh = new THREE.InstancedMesh(rippleGeometry, rippleMaterial, totalFish);
+  const phaseAttr = new Float32Array(totalFish);
+  for (let i = 0; i < totalFish; i++) {
+    phaseAttr[i] = Math.random() * Math.PI * 2;
+    ripplePhase[i] = phaseAttr[i];
+    rippleObj.position.set(0, -50, 0);
+    rippleObj.updateMatrix();
+    rippleMesh.setMatrixAt(i, rippleObj.matrix);
+  }
+  rippleGeometry.setAttribute('instPhase', new THREE.InstancedBufferAttribute(phaseAttr, 1));
+  rippleMesh.instanceMatrix.needsUpdate = true;
+  scene.add(rippleMesh);
+}
+spawnFishGroups();
 
 for (let i = 0; i < bubbleCount; i++) {
   dummy.position.set((Math.random() - 0.5) * 22, Math.random() * 18 - 9, (Math.random() - 0.5) * 14);
@@ -279,27 +529,6 @@ waves.rotation.x = -Math.PI / 2.2;
 waves.position.y = -6;
 scene.add(waves);
 
-const ribbonGeometry = new THREE.BufferGeometry();
-const ribbonPoints = 180;
-const ribbonPositions = new Float32Array(ribbonPoints * 3);
-for (let i = 0; i < ribbonPoints; i++) {
-  const t = (i / ribbonPoints) * Math.PI * 2;
-  ribbonPositions[i * 3] = Math.sin(t * 0.7) * 10;
-  ribbonPositions[i * 3 + 1] = Math.cos(t * 0.5) * 2 - 1;
-  ribbonPositions[i * 3 + 2] = Math.cos(t * 0.9) * 6 - 4;
-}
-ribbonGeometry.setAttribute('position', new THREE.BufferAttribute(ribbonPositions, 3));
-const ribbonMaterial = new THREE.LineBasicMaterial({
-  color: 0x36d1dc,
-  transparent: true,
-  opacity: 0.35,
-  linewidth: 2
-});
-const ribbon = new THREE.LineLoop(ribbonGeometry, ribbonMaterial);
-ribbon.rotation.y = Math.PI * 0.2;
-ribbon.position.y = -1;
-scene.add(ribbon);
-
 const mouse = new THREE.Vector2();
 window.addEventListener('pointermove', (event) => {
   mouse.x = (event.clientX / window.innerWidth - 0.5) * 2;
@@ -323,8 +552,6 @@ function animate() {
   const time = clock.elapsedTime;
 
   waveMaterial.uniforms.uTime.value = time;
-  ribbon.rotation.y += delta * 0.15;
-  ribbon.rotation.x = Math.sin(time * 0.2) * 0.08;
 
   for (let i = 0; i < bubbleCount; i++) {
     bubbles.getMatrixAt(i, matrix);
@@ -343,6 +570,38 @@ function animate() {
     bubbles.setMatrixAt(i, tempObj.matrix);
   }
   bubbles.instanceMatrix.needsUpdate = true;
+
+  fishGroups.forEach(({ mesh, speed, phase, yOffset, dir }) => {
+    const shader = mesh.material.userData?.shader;
+    if (shader?.uniforms?.uTime) {
+      shader.uniforms.uTime.value = time;
+    }
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.getMatrixAt(i, matrix);
+      tempObj.matrix.copy(matrix);
+      tempObj.matrix.decompose(tempObj.position, tempObj.quaternion, tempObj.scale);
+
+      const d = dir[i];
+      tempObj.position.x += d * speed[i] * delta * 2.1;
+      tempObj.position.y = yOffset[i] + Math.sin(time * 0.9 + phase[i]) * 0.6;
+      tempObj.position.z += Math.sin(time * 0.5 + phase[i]) * 0.05;
+
+      if (tempObj.position.x > 13) {
+        tempObj.position.x = -13;
+      } else if (tempObj.position.x < -13) {
+        tempObj.position.x = 13;
+      }
+
+      const yaw = Math.sin(time * 2 + phase[i]) * 0.22;
+      const roll = Math.sin(time * 1.4 + phase[i]) * 0.08;
+      tempObj.rotation.set(0, d === 1 ? 0 : Math.PI, 0);
+      tempObj.rotation.y += yaw;
+      tempObj.rotation.z = roll;
+      tempObj.updateMatrix();
+      mesh.setMatrixAt(i, tempObj.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  });
 
   const camTargetX = mouse.x * 0.5;
   const camTargetY = 1.5 + mouse.y * 0.4;
