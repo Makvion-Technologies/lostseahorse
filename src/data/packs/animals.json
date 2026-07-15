@@ -1,0 +1,28 @@
+{
+  "words": [
+    "dolphin", "turtle", "jellyfish", "starfish", "whale", "shark", "otter",
+    "beaver", "salmon", "trout", "herring", "octopus", "squid", "lobster",
+    "crab", "shrimp", "sponge", "anemone", "seahorse", "penguin", "seal",
+    "walrus", "narwhal", "manatee", "orca", "beluga", "stingray", "manta",
+    "clownfish", "angelfish", "barracuda", "swordfish", "marlin", "tuna",
+    "cod", "bass", "perch", "eel", "moray", "urchin", "coral", "plankton",
+    "falcon", "eagle", "raven", "sparrow", "owl", "hawk", "heron", "crane",
+    "pelican", "albatross", "puffin", "gull", "tern", "finch", "robin",
+    "cardinal", "bluejay", "parrot", "toucan", "macaw", "kiwi", "emu",
+    "ostrich", "flamingo", "peacock", "swan", "goose", "duck", "mallard",
+    "lion", "tiger", "leopard", "cheetah", "jaguar", "panther", "lynx",
+    "cougar", "wolf", "fox", "coyote", "jackal", "hyena", "bear", "panda",
+    "koala", "kangaroo", "wombat", "platypus", "echidna", "sloth", "lemur",
+    "monkey", "gorilla", "chimp", "orangutan", "baboon", "gibbon", "tarsier",
+    "elephant", "rhino", "hippo", "giraffe", "zebra", "buffalo", "bison",
+    "antelope", "gazelle", "deer", "moose", "elk", "caribou", "ibex",
+    "rabbit", "hare", "squirrel", "chipmunk", "hedgehog", "porcupine",
+    "badger", "weasel", "ferret", "mink", "marten", "raccoon", "skunk",
+    "camel", "llama", "alpaca", "donkey", "horse", "pony", "zebra",
+    "goat", "sheep", "cow", "pig", "boar", "mouse", "rat", "vole", "mole",
+    "bat", "frog", "toad", "newt", "salamander", "lizard", "gecko", "iguana",
+    "snake", "python", "cobra", "viper", "turtle", "tortoise", "crocodile",
+    "alligator", "butterfly", "moth", "dragonfly", "firefly", "bee", "wasp",
+    "ant", "termite", "beetle", "ladybug", "spider", "scorpion", "centipede"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "words": [
+    "orbit", "planet", "nebula", "comet", "rocket", "lunar", "solar",
+    "cosmic", "galaxy", "quasar", "pulsar", "nova", "supernova", "blackhole",
+    "asteroid", "meteor", "meteorite", "satellite", "shuttle", "capsule",
+    "module", "station", "habitat", "cosmos", "universe", "multiverse",
+    "gravity", "thrust", "booster", "payload", "launch", "countdown",
+    "liftoff", "reentry", "atmosphere", "vacuum", "void", "spacewalk",
+    "astronaut", "cosmonaut", "mission", "probe", "rover", "lander",
+    "crater", "eclipse", "equinox", "solstice", "zodiac", "constellation",
+    "andromeda", "orion", "sirius", "vega", "polaris", "betelgeuse",
+    "jupiter", "saturn", "neptune", "uranus", "mercury", "venus", "mars",
+    "pluto", "titan", "europa", "io", "ganymede", "phobos", "deimos",
+    "photon", "plasma", "fusion", "fission", "isotope", "helium", "hydrogen",
+    "oxygen", "carbon", "nitrogen", "radiation", "spectrum", "infrared",
+    "ultraviolet", "xray", "gamma", "wavelength", "parallax", "redshift",
+    "blueshift", "lightyear", "parsec", "au", "exoplanet", "habitable",
+    "terraform", "colony", "outpost", "stargate", "warp", "hyperspace",
+    "starship", "freighter", "cruiser", "destroyer", "battleship", "drone",
+    "alien", "signal", "beacon", "anomaly", "wormhole", "singularity",
+    "eventhorizon", "accretion", "disk", "corona", "chromosphere", "core",
+    "mantle", "crust", "asterism", "cluster", "globular", "spiral", "elliptical",
+    "irregular", "dwarf", "giant", "supergiant", "white", "dwarf", "neutron",
+    "magnetar", "blazar", "darkmatter", "darkenergy", "bigbang", "inflation",
+    "entropy", "timeline", "future", "past", "present", "infinity", "horizon"
+  ]
+}

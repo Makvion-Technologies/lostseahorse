@@ -1,0 +1,10 @@
+/**
+ * Ocean atmosphere utilities.
+ * Imported from globals.css for landing shell visuals.
+ */
+
+/* Reserved for shared animation tokens used across phases */
+:root {
+  --ocean-anim-slow: 18s;
+  --ocean-anim-ease: ease-in-out;
+}

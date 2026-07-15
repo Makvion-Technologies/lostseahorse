@@ -1,0 +1,33 @@
+{
+  "words": [
+    "japan", "canada", "brazil", "france", "spain", "italy", "germany",
+    "norway", "sweden", "finland", "denmark", "iceland", "ireland", "scotland",
+    "wales", "england", "portugal", "greece", "turkey", "poland", "austria",
+    "belgium", "netherlands", "switzerland", "hungary", "romania", "bulgaria",
+    "croatia", "serbia", "ukraine", "russia", "china", "india", "korea",
+    "vietnam", "thailand", "malaysia", "singapore", "indonesia", "philippines",
+    "australia", "zealand", "fiji", "samoa", "tonga", "mexico", "cuba",
+    "jamaica", "haiti", "panama", "colombia", "peru", "chile", "argentina",
+    "uruguay", "paraguay", "bolivia", "ecuador", "venezuela", "guyana",
+    "egypt", "libya", "tunisia", "morocco", "algeria", "sudan", "ethiopia",
+    "kenya", "uganda", "tanzania", "rwanda", "ghana", "nigeria", "senegal",
+    "mali", "niger", "chad", "cameroon", "angola", "namibia", "botswana",
+    "zambia", "zimbabwe", "mozambique", "madagascar", "mauritius", "seychelles",
+    "israel", "jordan", "lebanon", "syria", "iraq", "iran", "kuwait",
+    "qatar", "bahrain", "oman", "yemen", "georgia", "armenia", "azerbaijan",
+    "kazakhstan", "uzbekistan", "turkmenistan", "kyrgyzstan", "tajikistan",
+    "mongolia", "nepal", "bhutan", "bangladesh", "pakistan", "afghanistan",
+    "myanmar", "laos", "cambodia", "taiwan", "hongkong", "macau", "brunei",
+    "malta", "cyprus", "andorra", "monaco", "liechtenstein", "luxembourg",
+    "estonia", "latvia", "lithuania", "belarus", "moldova", "slovakia",
+    "slovenia", "albania", "montenegro", "macedonia", "kosovo", "bosnia",
+    "brazil", "america", "mexico", "greenland", "antarctica", "caribbean",
+    "sahara", "amazon", "himalaya", "andes", "alps", "rockies", "appalachia",
+    "nile", "amazon", "yangtze", "mississippi", "danube", "rhine", "volga",
+    "tokyo", "paris", "london", "berlin", "rome", "madrid", "lisbon",
+    "oslo", "stockholm", "helsinki", "copenhagen", "dublin", "vienna",
+    "prague", "warsaw", "budapest", "athens", "istanbul", "cairo", "nairobi",
+    "lagos", "cape", "sydney", "melbourne", "auckland", "seoul", "beijing",
+    "shanghai", "mumbai", "delhi", "bangkok", "jakarta", "manila", "hanoi"
+  ]
+}
