@@ -1,0 +1,299 @@
+@import "tailwindcss";
+
+@property --abyss {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f3efe6;
+}
+@property --ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #141820;
+}
+@property --muted {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6b6458;
+}
+@property --foam {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e7e0d4;
+}
+@property --coral {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c45c4a;
+}
+@property --teal {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #2a6b6a;
+}
+@property --amber {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #b8862a;
+}
+@property --card {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fffdf8;
+}
+@property --line {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(20, 24, 32, 0.1);
+}
+@property --glow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(42, 107, 106, 0.18);
+}
+@property --ray {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(180, 150, 90, 0.08);
+}
+@property --caret {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c45c4a;
+}
+
+:root {
+  --abyss: #f3efe6;
+  --ink: #141820;
+  --muted: #6b6458;
+  --foam: #e7e0d4;
+  --coral: #c45c4a;
+  --teal: #2a6b6a;
+  --amber: #b8862a;
+  --card: #fffdf8;
+  --line: rgba(20, 24, 32, 0.1);
+  --glow: rgba(42, 107, 106, 0.18);
+  --ray: rgba(180, 150, 90, 0.08);
+  --caret: #2a6b6a;
+}
+
+.dark {
+  --abyss: #070b10;
+  --ink: #e7eef4;
+  --muted: #8b97a4;
+  --foam: #0e161e;
+  --coral: #e07a68;
+  --teal: #6ed3c7;
+  --amber: #e0b25a;
+  --card: #0c131a;
+  --line: rgba(231, 238, 244, 0.08);
+  --glow: rgba(110, 211, 199, 0.12);
+  --ray: rgba(224, 178, 90, 0.06);
+  --caret: #6ed3c7;
+}
+
+@theme inline {
+  --color-abyss: var(--abyss);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-foam: var(--foam);
+  --color-coral: var(--coral);
+  --color-teal: var(--teal);
+  --color-amber: var(--amber);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sans);
+}
+
+html {
+  background: var(--abyss);
+  color: var(--ink);
+  transition:
+    --abyss 0.55s ease,
+    --ink 0.55s ease,
+    --muted 0.55s ease,
+    --foam 0.55s ease,
+    --coral 0.55s ease,
+    --teal 0.55s ease,
+    --amber 0.55s ease,
+    --card 0.55s ease,
+    --line 0.55s ease,
+    --glow 0.55s ease,
+    --ray 0.55s ease,
+    --caret 0.55s ease,
+    background-color 0.55s ease,
+    color 0.55s ease;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--abyss);
+  color: var(--ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+a,
+[role="button"] {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--teal) 35%, transparent);
+  color: var(--ink);
+}
+
+.font-display {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+}
+
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: lining-nums;
+  font-feature-settings: "zero" 0, "ss01" 0;
+}
+
+.ocean-root {
+  isolation: isolate;
+}
+
+.ocean-wash {
+  background:
+    radial-gradient(1200px 640px at 78% -8%, var(--glow), transparent 58%),
+    radial-gradient(900px 500px at 8% 110%, var(--ray), transparent 55%),
+    var(--abyss);
+}
+
+.ocean-rays {
+  background: repeating-linear-gradient(
+    -18deg,
+    transparent 0 46px,
+    var(--ray) 48px 72px,
+    transparent 74px 130px
+  );
+  animation: drift-rays 28s linear infinite;
+  opacity: 0.7;
+}
+
+.ocean-grain {
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.ocean-caustic {
+  background:
+    radial-gradient(ellipse 40% 18% at 30% 20%, color-mix(in oklab, var(--teal) 22%, transparent), transparent 70%),
+    radial-gradient(ellipse 32% 14% at 70% 40%, color-mix(in oklab, var(--amber) 16%, transparent), transparent 72%);
+  animation: caustic 18s ease-in-out infinite;
+  filter: blur(8px);
+}
+
+@keyframes drift-rays {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-80px, 40px, 0);
+  }
+}
+
+@keyframes caustic {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(3%, 2%, 0) scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes caret-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.caret {
+  animation: caret-pulse 1.05s ease-in-out infinite;
+}
+
+.bubble {
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink) 10%, transparent);
+  animation: rise var(--dur, 16s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes rise {
+  from {
+    transform: translate3d(0, 20vh, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.55;
+  }
+  to {
+    transform: translate3d(var(--drift, 12px), -110vh, 0);
+    opacity: 0;
+  }
+}
+
+.finish-mote {
+  animation: mote 1.6s ease-out forwards;
+}
+
+@keyframes mote {
+  from {
+    transform: translate3d(0, 8px, 0) scale(0.6);
+    opacity: 0.8;
+  }
+  to {
+    transform: translate3d(var(--x, 0px), -80px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
+
+  .ocean-rays,
+  .ocean-caustic,
+  .bubble,
+  .caret,
+  .finish-mote {
+    animation: none !important;
+  }
+}

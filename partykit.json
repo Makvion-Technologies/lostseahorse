@@ -1,0 +1,9 @@
+{
+  "$schema": "https://www.partykit.io/schema.json",
+  "name": "lostseahorse",
+  "main": "party/race-room.ts",
+  "compatibilityDate": "2024-09-19",
+  "parties": {
+    "matchmaker": "party/matchmaker.ts"
+  }
+}
