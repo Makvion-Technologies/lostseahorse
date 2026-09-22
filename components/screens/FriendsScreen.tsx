@@ -35,6 +35,9 @@ export function FriendsScreen() {
               code: room,
               time: value.time,
               level: value.level,
+              punctuation: value.punctuation,
+              numbers: value.numbers,
+              goal: value.goal,
               fillAi: false,
             }),
           );

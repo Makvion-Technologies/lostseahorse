@@ -38,9 +38,14 @@ export const DEFAULT_COLOR: ColorHex = COLORS[0];
 export const MODES = ["practice", "stranger", "friends"] as const;
 export type GameMode = (typeof MODES)[number];
 
+export type GoalMode = "time" | "words";
+
 export type RaceSettings = {
   time: TimeLimit;
   level: Level;
+  punctuation?: boolean;
+  numbers?: boolean;
+  goal?: GoalMode;
 };
 
 export type RacerLook = {

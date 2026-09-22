@@ -12,7 +12,6 @@ export type Save = {
   theme: SaveTheme;
   wpm?: number;
   races: number;
-  plankton: number;
   unlocked: string[];
 };
 
@@ -22,7 +21,6 @@ export const DEFAULT_SAVE: Save = {
   name: "",
   theme: "system",
   races: 0,
-  plankton: 0,
   unlocked: [...DEFAULT_UNLOCKED],
 };
 
@@ -47,10 +45,6 @@ export function parseSave(raw: unknown): Save {
     races:
       typeof data.races === "number" && Number.isFinite(data.races)
         ? Math.max(0, Math.round(data.races))
-        : 0,
-    plankton:
-      typeof data.plankton === "number" && Number.isFinite(data.plankton)
-        ? Math.max(0, Math.round(data.plankton))
         : 0,
     unlocked: unlocked.length ? unlocked : [...DEFAULT_UNLOCKED],
   };
@@ -103,7 +97,3 @@ export function updateWpm(raceWpm: number): Save {
   });
 }
 
-export function addPlankton(amount: number): Save {
-  const save = loadSave();
-  return writeSave({ plankton: save.plankton + Math.max(0, amount) });
-}

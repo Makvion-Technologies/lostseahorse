@@ -6,7 +6,7 @@ import { RacerSeahorse } from "@/components/seahorse/RacerSeahorse";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ShareBar } from "./ShareBar";
-import { stripeLink } from "@/lib/env";
+import { Toast } from "@/components/ui/Toast";
 import { placeLabel, type SharePayload } from "@/lib/share";
 import type { ColorHex, GameMode, StyleId } from "@/lib/types";
 
@@ -43,22 +43,20 @@ function CountUp({ value, reduce }: { value: number; reduce: boolean | null }) {
 export function ResultBoard({
   rows,
   mode,
-  plankton,
   share,
   onAgain,
   onRepeat,
 }: {
   rows: BoardRow[];
   mode: GameMode;
-  plankton: number;
   share: SharePayload;
   onAgain: () => void;
   onRepeat?: () => void;
 }) {
   const reduce = useReducedMotion();
   const you = rows.find((row) => row.you) ?? rows[0];
-  const donate = stripeLink();
   const winner = rows[0];
+  const [toast, setToast] = useState<string | null>(null);
 
   return (
     <Card className="relative mx-auto w-full max-w-2xl overflow-hidden">
@@ -77,7 +75,6 @@ export function ResultBoard({
               <span className="ml-2 text-2xl text-muted">accuracy</span>
             </p>
           </div>
-          <p className="mt-3 text-muted">+{plankton} plankton</p>
         </div>
         {winner ? (
           <RacerSeahorse className="h-28 w-28" />
@@ -115,7 +112,10 @@ export function ResultBoard({
         <Button href="/friends" variant="ghost">
           Invite friends
         </Button>
-        <Button href={donate ?? "/shop"} variant="quiet" external={Boolean(donate)}>
+        <Button
+          variant="quiet"
+          onClick={() => setToast("Whoa, eager. We're not ready for your money yet.")}
+        >
           Donate
         </Button>
       </div>
@@ -137,6 +137,11 @@ export function ResultBoard({
             />
           ))
         : null}
+      <Toast
+        message={toast}
+        onClear={() => setToast(null)}
+        tone="notice"
+      />
     </Card>
   );
 }

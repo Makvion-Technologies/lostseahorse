@@ -1,3 +1,4 @@
+import { compactTime } from "@/lib/formatTime";
 import { isPresetTime } from "@/lib/types";
 
 export function ClockGlyph({ className = "h-5 w-5" }: { className?: string }) {
@@ -23,8 +24,9 @@ export function ClockGlyph({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-export function customTimeSlot(time: number) {
+export function customTimeSlot(time: number, label?: string) {
   if (isPresetTime(time)) return <ClockGlyph />;
-  if (time === 0) return "∞";
-  return String(time);
+  if (time === 0) return <span className="normal-case tracking-tight">∞</span>;
+  const text = label || compactTime(time);
+  return <span className="normal-case tracking-tight">{text}</span>;
 }

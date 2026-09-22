@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { ShopScreen } from "@/components/screens/ShopScreen";
+import { ComingSoonRedirect } from "@/components/site/ComingSoonRedirect";
 
 export const metadata: Metadata = {
-  title: "Shrimp",
+  title: "Donate",
 };
 
 export default function ShopPage() {
-  return <ShopScreen />;
+  return <ComingSoonRedirect />;
 }

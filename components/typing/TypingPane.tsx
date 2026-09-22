@@ -3,6 +3,13 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import type { TypingEngine } from "@/lib/typing";
+import {
+  CUSTOM_TEXT_EXTS,
+  fileFromTransfer,
+  transferHasFiles,
+} from "@/lib/customText";
+import type { RecentUpload } from "@/lib/recentUploads";
+import { RecentUploads } from "@/components/ui/RecentUploads";
 import { cn } from "@/lib/cn";
 
 function groupWordLines(root: HTMLElement): number[][] {
@@ -22,16 +29,189 @@ function groupWordLines(root: HTMLElement): number[][] {
   return lines;
 }
 
+export function PasteWaitPane({
+  onPaste,
+  onPickFile,
+  recents,
+  onUseRecent,
+  onEmptyRecent,
+  onRemoveRecent,
+  onRemoveAllRecents,
+  onNotice,
+}: {
+  onPaste: (text: string) => void;
+  onPickFile: (file: File) => void;
+  recents: RecentUpload[];
+  onUseRecent: (item: RecentUpload) => void;
+  onEmptyRecent: () => void;
+  onRemoveRecent: (id: string) => void;
+  onRemoveAllRecents: () => void;
+  onNotice: (message: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileOver, setFileOver] = useState(false);
+  const accept = CUSTOM_TEXT_EXTS.map((ext) => `.${ext}`).join(",");
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  const allowFileDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (transferHasFiles(event.dataTransfer)) {
+      event.dataTransfer.dropEffect = "copy";
+      setFileOver(true);
+    }
+  };
+
+  const takeDroppedFile = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setFileOver(false);
+    const file = fileFromTransfer(event.dataTransfer);
+    if (file) {
+      onPickFile(file);
+      return;
+    }
+    if (event.dataTransfer.getData("text/plain")?.trim()) {
+      onNotice("Paste text in the lines above.");
+      return;
+    }
+    onNotice("Drop a text file here.");
+  };
+
+  return (
+    <div className="flex flex-col gap-10">
+      <div className="relative h-[9.6rem] overflow-hidden font-mono text-[1.55rem] leading-[3.2rem] tracking-wide sm:h-[10.8rem] sm:text-[1.95rem] sm:leading-[3.6rem]">
+        <span
+          aria-hidden
+          className="caret pointer-events-none absolute left-0 z-10 w-[2px] rounded-full bg-teal"
+          style={{ height: "1.05em", top: "calc((1lh - 1.05em) / 2)" }}
+        />
+        <p className="select-none">
+          <span className="pl-[0.45em] text-muted/55">Paste your own text</span>
+        </p>
+        <textarea
+          ref={ref}
+          aria-label="Paste your own text"
+          autoComplete="off"
+          spellCheck={false}
+          className="absolute inset-0 z-20 h-full w-full resize-none bg-transparent text-transparent caret-transparent outline-none"
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (transferHasFiles(event.dataTransfer)) {
+              onNotice("Drop files on the upload area below.");
+              return;
+            }
+            onNotice("Paste your text with Ctrl+V.");
+          }}
+          onPaste={(event) => {
+            event.preventDefault();
+            if (event.clipboardData?.files?.[0]) {
+              onNotice("Drop files on the upload area below.");
+              return;
+            }
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            if (!text.trim()) {
+              onNotice("Nothing to paste.");
+              return;
+            }
+            onPaste(text);
+          }}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+              return;
+            }
+            event.preventDefault();
+          }}
+        />
+      </div>
+      <div className="h-px w-full bg-line" />
+      <div
+        className={cn(
+          "grid min-h-11 grid-cols-[1fr_auto_1fr] items-start gap-4 rounded-2xl px-2 py-3",
+          fileOver && "ring-1 ring-teal",
+        )}
+        onDragEnter={allowFileDrop}
+        onDragOver={allowFileDrop}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+          setFileOver(false);
+        }}
+        onDrop={takeDroppedFile}
+      >
+        <div className="min-w-0 text-left text-sm tracking-wide text-muted">
+          <p>Supported files:</p>
+          <p className="mt-1 text-muted/60">
+            {CUSTOM_TEXT_EXTS.map((ext) => ext.toUpperCase()).join(", ")}
+          </p>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="cursor-pointer rounded-full bg-foam px-5 py-2 text-sm tracking-wide text-muted ring-1 ring-line outline-none hover:text-teal focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-abyss"
+          >
+            Upload your own text files
+          </button>
+          <p className="text-sm leading-tight text-muted/60">
+            You can drag and drop the files directly here
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={accept}
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onPickFile(file);
+            }}
+          />
+        </div>
+        <RecentUploads
+          recents={recents}
+          onUse={onUseRecent}
+          onEmpty={onEmptyRecent}
+          onRemove={onRemoveRecent}
+          onRemoveAll={onRemoveAllRecents}
+        />
+      </div>
+    </div>
+  );
+}
+
 export const TypingPane = memo(function TypingPane({
   engine,
   onShift,
   onNeedMore,
   onRefresh,
+  onClear,
+  chrome = true,
+  recents,
+  onUseRecent,
+  onEmptyRecent,
+  onRemoveRecent,
+  onRemoveAllRecents,
 }: {
   engine: TypingEngine;
   onShift?: (count: number) => void;
   onNeedMore?: () => void;
   onRefresh?: () => void;
+  onClear?: () => void;
+  chrome?: boolean;
+  recents?: RecentUpload[];
+  onUseRecent?: (item: RecentUpload) => void;
+  onEmptyRecent?: () => void;
+  onRemoveRecent?: (id: string) => void;
+  onRemoveAllRecents?: () => void;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLParagraphElement>(null);
@@ -90,7 +270,7 @@ export const TypingPane = memo(function TypingPane({
   }, [engine.typed, engine.wordIndex, engine.words.length]);
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="relative">
     <div
       ref={boxRef}
       className="relative h-[9.6rem] overflow-hidden sm:h-[10.8rem]"
@@ -123,6 +303,7 @@ export const TypingPane = memo(function TypingPane({
             typed.length > word.length ? typed.slice(word.length) : "";
           const hasError =
             extras.length > 0 ||
+            (isPast && typed !== word) ||
             word.split("").some((char, i) => typed[i] != null && typed[i] !== char);
 
           return (
@@ -175,18 +356,39 @@ export const TypingPane = memo(function TypingPane({
         })}
       </p>
     </div>
+      {chrome ? (
+      <div className="absolute top-full right-0 left-0 z-10 mt-10 flex flex-col gap-10">
       <div className="h-px w-full bg-line" />
-      {onRefresh ? (
+      <div
+        className={
+          recents
+            ? "grid min-h-11 grid-cols-[1fr_auto_1fr] items-start"
+            : undefined
+        }
+      >
+        {recents ? <div /> : null}
+        {onClear || onRefresh ? (
         <button
           type="button"
-          aria-label="Refresh passage"
-          onClick={onRefresh}
+          aria-label={onClear ? "Clear passage" : "Refresh passage"}
+          onClick={onClear ?? onRefresh}
           className="group mx-auto flex h-11 w-11 cursor-pointer items-center justify-center rounded-full font-semibold text-muted/45 outline-none transition-colors hover:text-teal focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-abyss"
         >
           <span className="relative flex">
             <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 rounded-full border border-line bg-card px-4 py-2 text-sm font-semibold tracking-wide text-muted whitespace-nowrap opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" style={{ marginBottom: "0.5rem" }}>
-              Refresh passage
+              {onClear ? "Clear passage" : "Refresh passage"}
             </span>
+            {onClear ? (
+              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+                <path
+                  d="M7 7l10 10M17 7L7 17"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            ) : (
             <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
               <path
                 d="M20 12a8 8 0 1 1-2.2-5.5"
@@ -204,8 +406,21 @@ export const TypingPane = memo(function TypingPane({
                 strokeLinejoin="round"
               />
             </svg>
+            )}
           </span>
         </button>
+        ) : null}
+        {recents && onUseRecent && onEmptyRecent && onRemoveRecent && onRemoveAllRecents ? (
+          <RecentUploads
+            recents={recents}
+            onUse={onUseRecent}
+            onEmpty={onEmptyRecent}
+            onRemove={onRemoveRecent}
+            onRemoveAll={onRemoveAllRecents}
+          />
+        ) : null}
+      </div>
+      </div>
       ) : null}
     </div>
   );

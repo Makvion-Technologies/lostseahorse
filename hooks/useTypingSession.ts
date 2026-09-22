@@ -63,7 +63,9 @@ export function useTypingSession(opts: {
     const current = engineRef.current;
     if (!infiniteRef.current || !moreWordsRef.current) return;
     if (current.words.length - current.wordIndex >= WORD_CAP) return;
-    appendWords(current, moreWordsRef.current());
+    const extra = moreWordsRef.current();
+    if (!extra.length) return;
+    appendWords(current, extra);
     publish({ ...current });
   }, [publish]);
 

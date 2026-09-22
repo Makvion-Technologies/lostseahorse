@@ -1,3 +1,10 @@
+export function compactTime(seconds: number): string {
+  if (seconds === 0) return "∞";
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
 export function formatClock(seconds: number): string {
   const total = Math.max(0, Math.ceil(seconds));
   const pad = (n: number) => n.toString().padStart(2, "0");

@@ -51,6 +51,9 @@ export function RaceQueueScreen() {
           color: DEFAULT_COLOR,
           level: value.level,
           time: value.time,
+          punctuation: value.punctuation,
+          numbers: value.numbers,
+          goal: value.goal,
           wpm: save.wpm,
           firstVisit: save.wpm == null,
         });

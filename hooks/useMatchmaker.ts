@@ -40,6 +40,9 @@ export function useMatchmaker(enabled: boolean) {
       color: ColorHex;
       level: Level;
       time: TimeLimit;
+      punctuation?: boolean;
+      numbers?: boolean;
+      goal?: "time" | "words";
       wpm?: number;
       firstVisit: boolean;
     }) => {

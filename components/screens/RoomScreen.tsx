@@ -12,8 +12,7 @@ import { useSave } from "@/hooks/useSave";
 import { useTypingSession } from "@/hooks/useTypingSession";
 import { isValidRoomCode } from "@/lib/roomCode";
 import { isLevel, isTimeLimit, type Level, type TimeLimit } from "@/lib/types";
-import { addPlankton, updateWpm } from "@/lib/storage";
-import { planktonForRace } from "@/lib/plankton";
+import { updateWpm } from "@/lib/storage";
 import { isOceanName } from "@/lib/oceanName";
 import { DEFAULT_COLOR, DEFAULT_STYLE } from "@/lib/types";
 import { formatClock } from "@/lib/formatTime";
@@ -22,6 +21,9 @@ type HostBlob = {
   code: string;
   time: TimeLimit;
   level: Level;
+  punctuation?: boolean;
+  numbers?: boolean;
+  goal?: "time" | "words";
   fillAi: boolean;
 };
 
@@ -71,7 +73,13 @@ export function RoomScreen({
       mode: stranger ? "stranger" : "friends",
       fillAi: host?.fillAi,
       settings: host
-        ? { time: host.time, level: host.level }
+        ? {
+            time: host.time,
+            level: host.level,
+            punctuation: host.punctuation === true,
+            numbers: host.numbers === true,
+            goal: host.goal === "words" ? "words" : "time",
+          }
         : undefined,
     });
   }, [code, isHost, ready, room, save.name, stranger, valid]);
@@ -101,13 +109,6 @@ export function RoomScreen({
     if (!room.results || awarded.current || !youResult) return;
     awarded.current = true;
     updateWpm(youResult.wpm);
-    addPlankton(
-      planktonForRace({
-        place: youResult.place,
-        finished: youResult.finished,
-        accuracy: youResult.accuracy,
-      }),
-    );
   }, [room.results, youResult]);
 
   const [now, setNow] = useState(0);
@@ -166,11 +167,6 @@ export function RoomScreen({
     return (
       <ResultBoard
         mode={share.mode}
-        plankton={planktonForRace({
-          place: youResult.place,
-          finished: youResult.finished,
-          accuracy: youResult.accuracy,
-        })}
         share={share}
         onAgain={() => {
           if (stranger) router.push("/race");

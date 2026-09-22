@@ -24,6 +24,9 @@ export type PlayerPublic = {
 export type RoomSettings = {
   time: TimeLimit;
   level: Level;
+  punctuation?: boolean;
+  numbers?: boolean;
+  goal?: "time" | "words";
 };
 
 export type RoomState = {
@@ -89,6 +92,9 @@ export type MatchmakerIn =
       color: string;
       level: Level;
       time: TimeLimit;
+      punctuation?: boolean;
+      numbers?: boolean;
+      goal?: "time" | "words";
       wpm?: number;
       firstVisit: boolean;
     }

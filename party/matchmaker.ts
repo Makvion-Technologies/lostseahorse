@@ -29,6 +29,9 @@ type Waiting = {
   color: ColorHex;
   level: Level;
   time: TimeLimit;
+  punctuation: boolean;
+  numbers: boolean;
+  goal: "time" | "words";
   wpm?: number;
   firstVisit: boolean;
   queuedAt: number;
@@ -90,6 +93,9 @@ export default class Matchmaker implements Party.Server {
       color,
       level: data.level,
       time: data.time,
+      punctuation: data.punctuation === true,
+      numbers: data.numbers === true,
+      goal: data.goal === "words" ? "words" : "time",
       wpm: typeof data.wpm === "number" ? data.wpm : undefined,
       firstVisit,
       queuedAt: Date.now(),
@@ -120,6 +126,13 @@ export default class Matchmaker implements Party.Server {
     for (const other of this.waiting) {
       if (other.connection.id === waiter.connection.id) continue;
       if (other.level !== waiter.level || other.time !== waiter.time) continue;
+      if (other.goal !== waiter.goal) continue;
+      if (
+        other.punctuation !== waiter.punctuation ||
+        other.numbers !== waiter.numbers
+      ) {
+        continue;
+      }
       const otherBand = bandForWpm(other.wpm);
       if (band === "any" || otherBand === "any") return other;
       if (band.min <= otherBand.max && otherBand.min <= band.max) return other;
@@ -133,7 +146,13 @@ export default class Matchmaker implements Party.Server {
     const code = createRoomCode();
     const ok = await this.setupRoom({
       mode: "stranger",
-      settings: { time: a.time, level: a.level },
+      settings: {
+        time: a.time,
+        level: a.level,
+        punctuation: a.punctuation,
+        numbers: a.numbers,
+        goal: a.goal,
+      },
       autoStart: true,
       expectedHumans: 2,
       fillAi: false,
@@ -162,7 +181,13 @@ export default class Matchmaker implements Party.Server {
     const ok = await this.setupRoom(
       {
         mode: "stranger",
-        settings: { time: waiter.time, level: waiter.level },
+        settings: {
+          time: waiter.time,
+          level: waiter.level,
+          punctuation: waiter.punctuation,
+          numbers: waiter.numbers,
+          goal: waiter.goal,
+        },
         autoStart: true,
         expectedHumans: 1,
         fillAi: true,

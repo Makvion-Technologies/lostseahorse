@@ -33,7 +33,7 @@ export function Modal({
           <motion.div
             role="dialog"
             className={cn(
-              "relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-line bg-card",
+              "relative z-10 w-full overflow-hidden rounded-3xl border border-line bg-card",
               className,
             )}
             initial={reduce ? false : { y: 12, opacity: 0 }}

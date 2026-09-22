@@ -10,10 +10,6 @@ export function HeroSeahorse() {
     <div className="relative flex h-full w-full items-center justify-center">
       <div
         aria-hidden
-        className="absolute inset-[8%] rounded-full bg-[#070b10] opacity-90 blur-xl dark:hidden"
-      />
-      <div
-        aria-hidden
         className="absolute inset-[12%] rounded-full bg-[radial-gradient(circle,var(--glow),transparent_68%)] blur-2xl"
       />
       <motion.div
@@ -32,7 +28,7 @@ export function HeroSeahorse() {
           height={980}
           priority
           sizes="(min-width: 1024px) 520px, 80vw"
-          className="h-full w-full object-contain dark:mix-blend-screen"
+          className="h-full w-full object-contain mix-blend-screen"
         />
       </motion.div>
     </div>

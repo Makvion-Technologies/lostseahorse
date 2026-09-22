@@ -1,17 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { useSave } from "@/hooks/useSave";
-import { stripeLink } from "@/lib/env";
+import { Toast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 
 export function Header({ className }: { className?: string }) {
-  const { save, ready } = useSave();
-  const donate = stripeLink();
+  const [toast, setToast] = useState<string | null>(null);
 
   return (
+    <>
     <header
       className={cn(
         "mx-auto flex w-full items-center justify-between px-6 py-6",
@@ -32,21 +32,22 @@ export function Header({ className }: { className?: string }) {
         />
         lost seahorse
       </Link>
-      <div className="flex items-center gap-4 text-sm">
-        <span className="hidden text-muted sm:inline" suppressHydrationWarning>
-          {ready ? `${save.plankton} plankton` : ""}
-        </span>
+      <div className="header-extras flex items-center gap-4 text-sm">
         <ThemeToggle />
-        <Link
-          href={donate ?? "/shop"}
-          className="text-muted hover:text-ink"
-          {...(donate
-            ? { target: "_blank", rel: "noreferrer" }
-            : {})}
+        <button
+          type="button"
+          onClick={() => setToast("Whoa, eager. We're not ready for your money yet.")}
+          className="cursor-pointer text-muted hover:text-ink"
         >
           Donate
-        </Link>
+        </button>
       </div>
     </header>
+      <Toast
+        message={toast}
+        onClear={() => setToast(null)}
+        tone="notice"
+      />
+    </>
   );
 }

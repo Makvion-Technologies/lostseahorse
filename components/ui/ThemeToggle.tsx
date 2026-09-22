@@ -94,10 +94,10 @@ export function ThemeToggle({ className }: { className?: string }) {
       aria-label="Toggle theme"
     >
       <span className="relative h-[18px] w-[18px]">
-        <span className="absolute inset-0 flex transition-all duration-300 ease-out dark:-rotate-45 dark:scale-75 dark:opacity-0 motion-reduce:transition-none">
+        <span className="theme-icon-moon absolute inset-0 flex">
           <MoonIcon />
         </span>
-        <span className="absolute inset-0 flex rotate-45 scale-75 opacity-0 transition-all duration-300 ease-out dark:rotate-0 dark:scale-100 dark:opacity-100 motion-reduce:transition-none">
+        <span className="theme-icon-sun absolute inset-0 flex">
           <SunIcon />
         </span>
       </span>

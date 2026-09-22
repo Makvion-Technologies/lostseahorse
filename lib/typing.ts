@@ -60,6 +60,8 @@ export function applyKey(engine: TypingEngine, key: string): KeyResult {
       engine.committed = engine.committed.slice(0, -1);
       engine.wordIndex -= 1;
       engine.typed = prev;
+      engine.lifetimeWords = Math.max(0, engine.lifetimeWords - 1);
+      engine.finished = false;
       syncStats(engine);
       return "backspace";
     }
@@ -112,6 +114,10 @@ export function expectedChar(engine: TypingEngine): string | null {
   if (engine.typed.length < word.length) return word[engine.typed.length] ?? null;
   if (engine.wordIndex < engine.words.length - 1) return " ";
   return null;
+}
+
+export function wordsRemaining(engine: TypingEngine): number {
+  return Math.max(0, engine.words.length - engine.wordIndex);
 }
 
 export function progressOf(engine: TypingEngine): number {

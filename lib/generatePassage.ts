@@ -9,36 +9,64 @@ const TARGET_CHARS: Record<number, Record<Level, number>> = {
   120: { easy: 400, medium: 400, hard: 400 },
 };
 
-const HARD_PUNCT = [",", ".", "?", "!", ";"] as const;
 const MAX_CHARS = 400;
 
-function decorateHard(word: string, rng: () => number): string {
-  if (word.includes("'") || word.includes("-")) return word;
-  if (rng() > 0.18) return word;
-  return word + pick(HARD_PUNCT, rng);
+const PLAIN = /^[A-Za-z]+$/;
+
+function plainWords(list: string[]): string[] {
+  return list.filter((word) => PLAIN.test(word));
 }
 
+const LISTS = allWordLists();
+const EASY = plainWords(LISTS.easy);
+const MEDIUM = plainWords(LISTS.medium);
+const HARD = plainWords(LISTS.hard);
+
+export type WordExtras = {
+  punctuation?: boolean;
+  numbers?: boolean;
+};
+
+const PUNCT = [",", ".", "?", "!", ";", ":"] as const;
+
 function pickWord(level: Level, rng: () => number): string {
-  const lists = allWordLists();
-  if (level === "easy") return pick(lists.easy, rng);
+  if (level === "easy") return pick(EASY, rng);
   if (level === "medium") {
-    return rng() < 0.45 ? pick(lists.easy, rng) : pick(lists.medium, rng);
+    return rng() < 0.45 ? pick(EASY, rng) : pick(MEDIUM, rng);
   }
-  const roll = rng();
-  if (roll < 0.12) return pick(lists.easy, rng);
-  if (roll < 0.35) return pick(lists.medium, rng);
-  return decorateHard(pick(lists.hard, rng), rng);
+  return rng() < 0.4 ? pick(MEDIUM, rng) : pick(HARD, rng);
+}
+
+function numberToken(rng: () => number): string {
+  const digits = 1 + Math.floor(rng() * 4);
+  let out = "";
+  for (let i = 0; i < digits; i++) {
+    const d = i === 0 && digits > 1 ? 1 + Math.floor(rng() * 9) : Math.floor(rng() * 10);
+    out += String(d);
+  }
+  return out;
+}
+
+function flavorWord(
+  word: string,
+  extras: WordExtras | undefined,
+  rng: () => number,
+): string {
+  if (extras?.numbers && rng() < 0.16) return numberToken(rng);
+  if (extras?.punctuation && rng() < 0.2) return word + pick(PUNCT, rng);
+  return word;
 }
 
 export function generateWords(opts: {
   level: Level;
   count: number;
   rng: () => number;
+  extras?: WordExtras;
 }): string[] {
   const words: string[] = [];
   const target = Math.max(1, opts.count);
   while (words.length < target) {
-    words.push(pickWord(opts.level, opts.rng));
+    words.push(flavorWord(pickWord(opts.level, opts.rng), opts.extras, opts.rng));
   }
   return words;
 }
@@ -47,6 +75,7 @@ export function generatePassage(opts: {
   level: Level;
   time: TimeLimit;
   rng: () => number;
+  extras?: WordExtras;
 }): string {
   const preset = TARGET_CHARS[opts.time];
   const target = preset
@@ -59,7 +88,11 @@ export function generatePassage(opts: {
   let chars = 0;
 
   while (chars < target) {
-    const word = pickWord(opts.level, opts.rng);
+    const word = flavorWord(
+      pickWord(opts.level, opts.rng),
+      opts.extras,
+      opts.rng,
+    );
     const extra = words.length === 0 ? word.length : word.length + 1;
     if (chars + extra > MAX_CHARS) break;
     words.push(word);

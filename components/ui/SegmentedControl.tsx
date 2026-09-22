@@ -10,6 +10,10 @@ export function SegmentedControl<T extends string | number>({
   layoutId,
   className,
   ariaLabel,
+  compact,
+  tight,
+  locked,
+  onLocked,
 }: {
   value: T;
   options: { value: T; label: React.ReactNode; ariaLabel?: string }[];
@@ -17,6 +21,10 @@ export function SegmentedControl<T extends string | number>({
   layoutId: string;
   className?: string;
   ariaLabel?: string;
+  compact?: boolean;
+  tight?: boolean;
+  locked?: boolean;
+  onLocked?: () => void;
 }) {
   const reduce = useReducedMotion();
 
@@ -25,7 +33,9 @@ export function SegmentedControl<T extends string | number>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        "relative flex w-full rounded-full bg-foam p-1.5 ring-1 ring-line",
+        "relative flex rounded-xl bg-foam p-1 ring-1 ring-line",
+        !compact && "w-full",
+        locked && "opacity-40",
         className,
       )}
     >
@@ -38,9 +48,21 @@ export function SegmentedControl<T extends string | number>({
             role="radio"
             aria-label={option.ariaLabel}
             aria-checked={selected}
-            onClick={() => onChange(option.value)}
+            onClick={() => {
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              onChange(option.value);
+            }}
             className={cn(
-              "relative z-10 flex flex-1 cursor-pointer items-center justify-center rounded-full px-3 py-3 text-base tracking-wide outline-none transition-colors sm:px-5",
+              "relative z-10 cursor-pointer items-center justify-center rounded-xl outline-none transition-colors",
+              compact ? "flex flex-none" : "flex flex-1",
+              tight
+                ? "px-3 py-1.5 text-sm"
+                : compact
+                  ? "px-4 py-1.5 text-sm sm:px-5"
+                  : "px-2.5 py-1.5 text-sm sm:px-3.5",
               "focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-abyss",
               selected ? "text-abyss" : "text-muted hover:text-ink",
             )}
@@ -48,7 +70,7 @@ export function SegmentedControl<T extends string | number>({
             {selected ? (
               <motion.span
                 layoutId={layoutId}
-                className="absolute inset-0 -z-10 rounded-full bg-teal shadow-[0_8px_24px_-12px_var(--teal)]"
+                className="absolute inset-0 -z-10 rounded-xl bg-teal shadow-[0_8px_24px_-12px_var(--teal)]"
                 transition={
                   reduce
                     ? { duration: 0 }
@@ -58,8 +80,10 @@ export function SegmentedControl<T extends string | number>({
             ) : null}
             <span
               className={cn(
-                "relative z-10",
-                typeof option.label === "string" && "capitalize",
+                "relative z-10 max-w-full truncate",
+                typeof option.label === "string" &&
+                  !/\d/.test(option.label) &&
+                  "capitalize",
               )}
             >
               {option.label}

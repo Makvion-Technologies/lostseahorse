@@ -1,6 +1,6 @@
 import type * as Party from "partykit/server";
 import { buildStrokes, targetWpm, type Stroke } from "../lib/ai/typer";
-import { generatePassage } from "../lib/generatePassage";
+import { generatePassage, generateWords } from "../lib/generatePassage";
 import {
   MAX_KEYS_PER_BATCH,
   MAX_KEYS_PER_SEC,
@@ -289,11 +289,24 @@ export default class RaceRoom implements Party.Server {
     if (this.fillAi) this.ensureFillAi();
 
     const rng = mulberry32(hashSeed(`${this.room.id}:${Date.now()}`));
-    this.passage = generatePassage({
-      level: this.settings.level,
-      time: this.settings.time,
-      rng,
-    });
+    const extras = {
+      punctuation: this.settings.punctuation === true,
+      numbers: this.settings.numbers === true,
+    };
+    this.passage =
+      this.settings.goal === "words"
+        ? generateWords({
+            level: this.settings.level,
+            count: Math.max(this.settings.time, 1),
+            rng,
+            extras,
+          }).join(" ")
+        : generatePassage({
+            level: this.settings.level,
+            time: this.settings.time,
+            rng,
+            extras,
+          });
     for (const player of this.players.values()) {
       player.engine = createEngine(this.passage);
       player.finishedAt = null;
@@ -310,7 +323,7 @@ export default class RaceRoom implements Party.Server {
   private armClock(now: number) {
     if (this.startedAt) return;
     this.startedAt = now;
-    if (this.settings.time > 0) {
+    if (this.settings.goal !== "words" && this.settings.time > 0) {
       this.endsAt = now + this.settings.time * 1000;
       this.alarmKind = "end";
       void this.room.storage.setAlarm(this.endsAt);
@@ -515,7 +528,13 @@ function parseSettings(raw: unknown): RoomSettings | null {
   const data = asRecord(raw);
   if (!data) return null;
   if (!isTimeLimit(data.time) || !isLevel(data.level)) return null;
-  return { time: data.time, level: data.level };
+  return {
+    time: data.time,
+    level: data.level,
+    punctuation: data.punctuation === true,
+    numbers: data.numbers === true,
+    goal: data.goal === "words" ? "words" : "time",
+  };
 }
 
 function parseSetup(raw: unknown): SetupPayload | null {

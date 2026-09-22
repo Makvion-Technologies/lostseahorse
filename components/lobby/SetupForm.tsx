@@ -5,16 +5,26 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { CustomTimeModal } from "@/components/ui/CustomTimeModal";
+import { ExtraToggles, GoalToggle } from "@/components/ui/ExtraToggles";
 import { customTimeSlot } from "@/components/ui/ClockGlyph";
 import { isPresetTime } from "@/lib/types";
 import { useSave } from "@/hooks/useSave";
-import { LEVELS, TIMES, type Level, type TimeLimit } from "@/lib/types";
+import {
+  LEVELS,
+  TIMES,
+  type GoalMode,
+  type Level,
+  type TimeLimit,
+} from "@/lib/types";
 import { loadSetup, saveSetup } from "@/lib/setup";
 
 export type SetupValue = {
   name: string;
   time: TimeLimit;
   level: Level;
+  punctuation: boolean;
+  numbers: boolean;
+  goal: GoalMode;
 };
 
 export function SetupForm({
@@ -32,11 +42,22 @@ export function SetupForm({
 }) {
   const { save, ready } = useSave();
   const [time, setTime] = useState<TimeLimit>(() => loadSetup().time);
+  const [timeLabel, setTimeLabel] = useState<string | undefined>(
+    () => loadSetup().timeLabel,
+  );
   const [level, setLevel] = useState<Level>(() => loadSetup().level);
+  const [extras, setExtras] = useState(() => loadSetup().extras);
+  const [goal, setGoal] = useState<GoalMode>(() => loadSetup().goal);
   const [timeOpen, setTimeOpen] = useState(false);
 
-  const persist = (nextTime: TimeLimit, nextLevel: Level) => {
-    saveSetup(nextTime, nextLevel);
+  const persist = (
+    nextTime: TimeLimit,
+    nextLevel: Level,
+    nextLabel?: string,
+    nextExtras = extras,
+    nextGoal = goal,
+  ) => {
+    saveSetup(nextTime, nextLevel, nextLabel, nextExtras, nextGoal);
   };
 
   return (
@@ -66,7 +87,7 @@ export function SetupForm({
               })),
               {
                 value: "custom" as const,
-                label: customTimeSlot(time),
+                label: customTimeSlot(time, timeLabel),
                 ariaLabel: isPresetTime(time)
                   ? "Custom time"
                   : `${time} seconds, custom time`,
@@ -78,7 +99,24 @@ export function SetupForm({
                 return;
               }
               setTime(value);
+              setTimeLabel(undefined);
               persist(value, level);
+            }}
+          />
+          <GoalToggle
+            layoutId="setup-goal"
+            value={goal}
+            onChange={(next) => {
+              setGoal(next);
+              persist(time, level, timeLabel, extras, next);
+            }}
+          />
+          <ExtraToggles
+            punctuation={extras.punctuation}
+            numbers={extras.numbers}
+            onChange={(next) => {
+              setExtras(next);
+              persist(time, level, timeLabel, next);
             }}
           />
           <SegmentedControl
@@ -91,7 +129,7 @@ export function SetupForm({
             }))}
             onChange={(value) => {
               setLevel(value);
-              persist(time, value);
+              persist(time, value, timeLabel);
             }}
           />
         </div>
@@ -100,10 +138,13 @@ export function SetupForm({
       <CustomTimeModal
         open={timeOpen}
         current={time}
+        mode={goal}
+        currentLabel={timeLabel}
         onClose={() => setTimeOpen(false)}
-        onApply={(seconds) => {
+        onApply={(seconds, label) => {
           setTime(seconds);
-          persist(seconds, level);
+          setTimeLabel(label);
+          persist(seconds, level, label);
         }}
       />
       <Button
@@ -114,6 +155,9 @@ export function SetupForm({
             name: save.name,
             time,
             level,
+            punctuation: extras.punctuation,
+            numbers: extras.numbers,
+            goal,
           })
         }
       >
