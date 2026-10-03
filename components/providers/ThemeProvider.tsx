@@ -8,6 +8,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       attribute="class"
       defaultTheme="system"
       enableSystem
+      disableTransitionOnChange
+      enableColorScheme
     >
       {children}
     </NextThemes>

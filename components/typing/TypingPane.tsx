@@ -2,6 +2,8 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
+import type { GhostFrame } from "@/lib/runStats";
+import { ghostPlayhead } from "@/lib/runStats";
 import type { TypingEngine } from "@/lib/typing";
 import {
   CUSTOM_TEXT_EXTS,
@@ -200,6 +202,9 @@ export const TypingPane = memo(function TypingPane({
   onEmptyRecent,
   onRemoveRecent,
   onRemoveAllRecents,
+  ghost,
+  ghostStart,
+  ghostWords,
 }: {
   engine: TypingEngine;
   onShift?: (count: number) => void;
@@ -212,6 +217,9 @@ export const TypingPane = memo(function TypingPane({
   onEmptyRecent?: () => void;
   onRemoveRecent?: (id: string) => void;
   onRemoveAllRecents?: () => void;
+  ghost?: GhostFrame[];
+  ghostStart?: number;
+  ghostWords?: string[];
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLParagraphElement>(null);
@@ -220,6 +228,13 @@ export const TypingPane = memo(function TypingPane({
   const started = engine.totalChars > 0 || engine.wordIndex > 0;
   const reduce = useReducedMotion();
   const [caret, setCaret] = useState({ x: 0, y: 0, h: 24, ready: false });
+  const [ghostCaret, setGhostCaret] = useState({
+    x: 0,
+    y: 0,
+    h: 24,
+    ready: false,
+    visible: false,
+  });
 
   useEffect(() => {
     onShiftRef.current = onShift;
@@ -269,12 +284,104 @@ export const TypingPane = memo(function TypingPane({
     });
   }, [engine.typed, engine.wordIndex, engine.words.length]);
 
+  useLayoutEffect(() => {
+    if (!ghost?.length) {
+      setGhostCaret((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      return;
+    }
+    const box = boxRef.current;
+    const root = rootRef.current;
+    if (!box || !root) return;
+    let frameId = 0;
+    const pointOf = (word: number, letter: number) => {
+      const dropped = engine.lifetimeWords - engine.wordIndex;
+      const vis = word - dropped;
+      const wordEl = box.querySelector(
+        `[data-word="${vis}"]`,
+      ) as HTMLElement | null;
+      if (!wordEl) return null;
+      const letters = wordEl.querySelectorAll("[data-letter]");
+      const fontSize = parseFloat(getComputedStyle(root).fontSize) || 24;
+      const h = fontSize * 1.05;
+      const boxRect = box.getBoundingClientRect();
+      const wordRect = wordEl.getBoundingClientRect();
+      const y = wordRect.top - boxRect.top + (wordRect.height - h) / 2;
+      let x = wordRect.left - boxRect.left;
+      if (letter <= 0) {
+        x = wordRect.left - boxRect.left;
+      } else if (letter >= letters.length) {
+        const last = letters[letters.length - 1] as HTMLElement | undefined;
+        x = last
+          ? last.getBoundingClientRect().right - boxRect.left
+          : wordRect.right - boxRect.left;
+      } else {
+        const mark = letters[letter] as HTMLElement;
+        x = mark.getBoundingClientRect().left - boxRect.left;
+      }
+      return { x, y, h };
+    };
+    const measure = () => {
+      const t = ghostStart ? (Date.now() - ghostStart) / 1000 : 0;
+      const words = ghostWords?.length ? ghostWords : engine.words;
+      const head = ghostPlayhead(ghost, words, t);
+      const from = pointOf(head.word, head.letter);
+      const wordLen = words[head.word]?.length ?? 0;
+      const next =
+        head.letter >= wordLen
+          ? { word: head.word + 1, letter: 0 }
+          : { word: head.word, letter: head.letter + 1 };
+      const to = pointOf(next.word, next.letter);
+      const pos = from ?? to;
+      if (!pos) {
+        setGhostCaret((prev) =>
+          prev.visible ? { ...prev, visible: false } : prev,
+        );
+      } else {
+        const target = to ?? pos;
+        const u = head.frac;
+        const x = pos.x + (target.x - pos.x) * u;
+        const y = pos.y + (target.y - pos.y) * u;
+        setGhostCaret((prev) => {
+          if (
+            prev.ready &&
+            prev.visible &&
+            Math.abs(prev.x - x) < 0.15 &&
+            Math.abs(prev.y - y) < 0.15
+          ) {
+            return prev;
+          }
+          return { x, y, h: pos.h, ready: true, visible: true };
+        });
+      }
+      frameId = requestAnimationFrame(measure);
+    };
+    frameId = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frameId);
+  }, [
+    engine.lifetimeWords,
+    engine.wordIndex,
+    engine.words.length,
+    ghost,
+    ghostStart,
+    ghostWords,
+  ]);
+
   return (
     <div className="relative">
     <div
       ref={boxRef}
       className="relative h-[9.6rem] overflow-hidden sm:h-[10.8rem]"
     >
+      {ghostCaret.visible ? (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 z-[9] w-[2px] rounded-full bg-muted/40"
+          style={{ height: ghostCaret.h, opacity: ghostCaret.ready ? 1 : 0 }}
+          initial={false}
+          animate={{ x: ghostCaret.x, y: ghostCaret.y }}
+          transition={{ duration: 0 }}
+        />
+      ) : null}
       <motion.span
         aria-hidden
         className={cn(
@@ -321,7 +428,11 @@ export const TypingPane = memo(function TypingPane({
                 const ok = got == null ? null : got === char;
                 const isNext = isCurrent && typed.length === i;
                 return (
-                  <span key={i} data-caret={isNext ? "" : undefined}>
+                  <span
+                    key={i}
+                    data-letter={i}
+                    data-caret={isNext ? "" : undefined}
+                  >
                     <span
                       className={cn(
                         ok === true && "text-teal",

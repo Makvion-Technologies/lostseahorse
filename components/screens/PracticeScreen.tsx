@@ -1,14 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useTheme } from "next-themes";
-import { ResultBoard } from "@/components/typing/ResultBoard";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { SoloResults } from "@/components/typing/SoloResults";
 import { PasteWaitPane, TypingPane } from "@/components/typing/TypingPane";
 import { useTypingSession } from "@/hooks/useTypingSession";
 import { generateWords } from "@/lib/generatePassage";
 import { updateWpm } from "@/lib/storage";
-import { calcAccuracy, calcWpm } from "@/lib/wpm";
-import { loadSetup, saveSetup } from "@/lib/setup";
+import { calcWpm } from "@/lib/wpm";
+import {
+  buildRunStats,
+  fillWordMarks,
+  wordMarks,
+  type ChartMark,
+  type GhostFrame,
+  type ReplayEvent,
+  type RunStats,
+  type WpmSample,
+} from "@/lib/runStats";
+import type { TypingEngine } from "@/lib/typing";
+import { DEFAULT_SETUP, loadSetup, saveSetup } from "@/lib/setup";
 import { formatClock } from "@/lib/formatTime";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { CustomTimeModal } from "@/components/ui/CustomTimeModal";
@@ -33,8 +43,6 @@ import {
   type RecentUpload,
 } from "@/lib/recentUploads";
 import {
-  DEFAULT_COLOR,
-  DEFAULT_STYLE,
   LEVELS,
   TIMES,
   isPresetTime,
@@ -46,30 +54,29 @@ import {
 type Phase = "racing" | "results";
 
 export function PracticeScreen() {
-  const { resolvedTheme } = useTheme();
   const client = useSyncExternalStore(
     () => () => undefined,
     () => true,
     () => false,
   );
-  const [time, setTime] = useState<TimeLimit>(() => loadSetup().time);
-  const [timeLabel, setTimeLabel] = useState<string | undefined>(
-    () => loadSetup().timeLabel,
-  );
-  const [level, setLevel] = useState<Level>(() => loadSetup().level);
-  const [extras, setExtras] = useState(() => loadSetup().extras);
-  const [goal, setGoal] = useState<GoalMode>(() => loadSetup().goal);
+  const [time, setTime] = useState<TimeLimit>(DEFAULT_SETUP.time);
+  const [timeLabel, setTimeLabel] = useState<string | undefined>();
+  const [level, setLevel] = useState<Level>(DEFAULT_SETUP.level);
+  const [extras, setExtras] = useState(DEFAULT_SETUP.extras);
+  const [goal, setGoal] = useState<GoalMode>(DEFAULT_SETUP.goal);
   const [phase, setPhase] = useState<Phase>("racing");
   const [passage, setPassage] = useState("");
   const [endsAt, setEndsAt] = useState(0);
-  const [left, setLeft] = useState(() => loadSetup().time * 1000);
-  const [result, setResult] = useState<{
-    wpm: number;
-    accuracy: number;
-    finished: boolean;
-  } | null>(null);
+  const [left, setLeft] = useState(DEFAULT_SETUP.time * 1000);
+  const [result, setResult] = useState<RunStats | null>(null);
   const done = useRef(false);
   const startedAtRef = useRef(0);
+  const samplesRef = useRef<WpmSample[]>([]);
+  const marksRef = useRef<ChartMark[]>([]);
+  const ghostRef = useRef<GhostFrame[]>([]);
+  const replayRef = useRef<ReplayEvent[]>([]);
+  const fullWordsRef = useRef<string[]>([]);
+  const competeRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
   const [timeOpen, setTimeOpen] = useState(false);
   const [running, setRunning] = useState(false);
@@ -79,6 +86,8 @@ export function PracticeScreen() {
   const [pasteWait, setPasteWait] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentUpload[]>([]);
+  const [ghost, setGhost] = useState<GhostFrame[] | null>(null);
+  const [raceStart, setRaceStart] = useState(0);
   const levelRef = useRef(level);
   const extrasRef = useRef(extras);
   const goalRef = useRef(goal);
@@ -129,15 +138,15 @@ export function PracticeScreen() {
     }
     if (stored.goal !== goal) setGoal(stored.goal);
     setLeft(stored.time > 0 ? stored.time * 1000 : 0);
-    setPassage(
-      generateWords({
-        level: stored.level,
-        count:
-          stored.goal === "words" && stored.time > 0 ? stored.time : 120,
-        rng: Math.random,
-        extras: stored.extras,
-      }).join(" "),
-    );
+    const first = generateWords({
+      level: stored.level,
+      count:
+        stored.goal === "words" && stored.time > 0 ? stored.time : 120,
+      rng: Math.random,
+      extras: stored.extras,
+    }).join(" ");
+    fullWordsRef.current = first.split(/\s+/).filter(Boolean);
+    setPassage(first);
   }
 
   const begin = useCallback(
@@ -150,6 +159,7 @@ export function PracticeScreen() {
       passage?: string;
       regen?: boolean;
       useCustom?: boolean;
+      compete?: boolean;
     }) => {
       const nextTime = opts?.time ?? time;
       const nextLevel = opts?.level ?? level;
@@ -171,6 +181,13 @@ export function PracticeScreen() {
       saveSetup(nextTime, nextLevel, nextLabel, nextExtras, nextGoal);
       done.current = false;
       startedAtRef.current = 0;
+      samplesRef.current = [];
+      marksRef.current = [];
+      ghostRef.current = [];
+      replayRef.current = [];
+      competeRef.current = Boolean(opts?.compete);
+      if (!opts?.compete) setGhost(null);
+      setRaceStart(0);
       setRunning(false);
       setEndsAt(0);
       setLeft(nextTime > 0 ? nextTime * 1000 : 0);
@@ -179,8 +196,11 @@ export function PracticeScreen() {
       setPhase("racing");
       if (opts?.passage) {
         setPassage(opts.passage);
+        fullWordsRef.current = opts.passage.split(/\s+/).filter(Boolean);
       } else if ((opts?.useCustom ?? usingCustom) && customText) {
-        setPassage(passageFromCustom(customText, nextGoal, nextTime));
+        const text = passageFromCustom(customText, nextGoal, nextTime);
+        setPassage(text);
+        fullWordsRef.current = text.split(/\s+/).filter(Boolean);
       } else if (
         opts?.regen ||
         opts?.level ||
@@ -188,41 +208,83 @@ export function PracticeScreen() {
         opts?.goal ||
         (nextGoal === "words" && opts?.time != null)
       ) {
-        setPassage(
-          generateWords({
-            level: nextLevel,
-            count:
-              nextGoal === "words" && nextTime > 0 ? nextTime : 120,
-            rng: Math.random,
-            extras: nextExtras,
-          }).join(" "),
-        );
+        const text = generateWords({
+          level: nextLevel,
+          count:
+            nextGoal === "words" && nextTime > 0 ? nextTime : 120,
+          rng: Math.random,
+          extras: nextExtras,
+        }).join(" ");
+        setPassage(text);
+        fullWordsRef.current = text.split(/\s+/).filter(Boolean);
+      } else {
+        fullWordsRef.current = passage.split(/\s+/).filter(Boolean);
       }
     },
-    [customText, extras, goal, level, time, timeLabel, usingCustom],
+    [customText, extras, goal, level, passage, time, timeLabel, usingCustom],
   );
 
-  const finish = useCallback((opts: {
-    correctChars: number;
-    totalChars: number;
-    finished: boolean;
-  }) => {
-    if (done.current) return;
-    done.current = true;
-    const started = startedAtRef.current || Date.now();
-    const raw = Math.max(1 / 60, (Date.now() - started) / 1000);
-    const elapsed =
-      goal === "time" && time > 0 ? Math.min(time, raw) : raw;
-    const wpm = calcWpm(opts.correctChars, elapsed / 60);
-    const accuracy = calcAccuracy(opts.correctChars, opts.totalChars);
-    updateWpm(wpm);
-    setResult({
-      wpm,
-      accuracy,
-      finished: opts.finished,
-    });
-    setPhase("results");
-  }, [goal, time]);
+  useEffect(() => {
+    const goHome = () => {
+      setPasteWait(false);
+      setUsingCustom(false);
+      setGhost(null);
+      setResult(null);
+      begin({ regen: true, useCustom: false });
+    };
+    window.addEventListener("lostseahorse:home", goHome);
+    return () => window.removeEventListener("lostseahorse:home", goHome);
+  }, [begin]);
+
+  const finish = useCallback(
+    (engine: TypingEngine, finished: boolean) => {
+      if (done.current) return;
+      done.current = true;
+      const started = startedAtRef.current || Date.now();
+      const raw = Math.max(1 / 60, (Date.now() - started) / 1000);
+      const elapsed =
+        goal === "time" && time > 0 ? Math.min(time, raw) : raw;
+      if (engine.typed.length > 0) {
+        const wpmNow = calcWpm(engine.correctChars, elapsed / 60);
+        const expected = engine.words[engine.wordIndex] ?? "";
+        const typed = engine.typed;
+        const wordKey = engine.lifetimeWords;
+        marksRef.current = fillWordMarks(
+          marksRef.current,
+          wordKey,
+          expected,
+          typed,
+        );
+        const hasWord = marksRef.current.some((mark) => mark.wordKey === wordKey);
+        if (!hasWord) {
+          marksRef.current = [
+            ...marksRef.current,
+            ...wordMarks(elapsed, wpmNow, expected, typed, wordKey),
+          ];
+        }
+      }
+      const stats = buildRunStats({
+        engine,
+        elapsed,
+        setTime: time,
+        goal,
+        level: levelRef.current,
+        extras: extrasRef.current,
+        source: usingCustomRef.current ? "custom" : "generated",
+        finished,
+        samples: samplesRef.current,
+        marks: marksRef.current,
+        ghost: ghostRef.current,
+        replayPassage: fullWordsRef.current.join(" "),
+        replay: replayRef.current,
+      });
+      updateWpm(stats.wpm);
+      setResult(stats);
+      setRunning(false);
+      setPhase("results");
+    },
+    [goal, time],
+  );
 
   useEffect(() => {
     if (!running || phase !== "racing") {
@@ -256,6 +318,7 @@ export function PracticeScreen() {
     if (startedAtRef.current) return;
     const now = Date.now();
     startedAtRef.current = now;
+    setRaceStart(now);
     setRunning(true);
     if (goal === "time" && time > 0) {
       setEndsAt(now + time * 1000);
@@ -324,6 +387,8 @@ export function PracticeScreen() {
     setEndsAt(0);
     setLeft(0);
     setResult(null);
+    samplesRef.current = [];
+    marksRef.current = [];
     setAttempt((n) => n + 1);
     setPhase("racing");
     saveSetup(0, levelRef.current, "∞", extrasRef.current, goalRef.current);
@@ -362,24 +427,97 @@ export function PracticeScreen() {
   const typing = useTypingSession({
     passage,
     resetKey: attempt,
-    infinite: goal !== "words" || time === 0,
+    infinite: !ghost && (goal !== "words" || time === 0),
     moreWords: () => {
+      if (competeRef.current) return [];
       if (goalRef.current === "words" && timeRef.current > 0) return [];
+      let extra: string[] = [];
       if (usingCustomRef.current && customTextRef.current) {
-        return customWordList(customTextRef.current);
+        extra = customWordList(customTextRef.current);
+      } else {
+        extra = generateWords({
+          level: levelRef.current,
+          count: 120,
+          rng: Math.random,
+          extras: extrasRef.current,
+          avoid: fullWordsRef.current.at(-1),
+        });
       }
-      return generateWords({
-        level: levelRef.current,
-        count: 120,
-        rng: Math.random,
-        extras: extrasRef.current,
-      });
+      fullWordsRef.current = [...fullWordsRef.current, ...extra];
+      return extra;
     },
     active: phase === "racing" && Boolean(passage) && !timeOpen && !pasteWait,
-    onKey: (key) => {
+    onKey: (key, engine) => {
       if (key.length === 1) armClock();
+      const started = startedAtRef.current;
+      if (!started) return;
+      const t = (Date.now() - started) / 1000;
+      ghostRef.current.push({
+        t,
+        word: engine.lifetimeWords,
+        letter: engine.typed.length,
+      });
+      replayRef.current.push({ t, key });
+      const wpm = calcWpm(engine.correctChars, t / 60);
+      if (key === " ") {
+        const index = engine.wordIndex - 1;
+        if (index < 0) return;
+        const expected = engine.words[index] ?? "";
+        const typed = engine.committed[index] ?? "";
+        const wordKey = engine.lifetimeWords - 1;
+        marksRef.current = fillWordMarks(
+          marksRef.current,
+          wordKey,
+          expected,
+          typed,
+        );
+        if (typed.length < expected.length) {
+          marksRef.current.push({
+            t,
+            wpm,
+            expected,
+            typed,
+            kind: "missed",
+            wordKey,
+            at: typed.length,
+          });
+        }
+        return;
+      }
+      if (key.length !== 1) return;
+      const expectedWord = engine.words[engine.wordIndex] ?? "";
+      const typed = engine.typed;
+      const pos = typed.length - 1;
+      const expectedCh = expectedWord[pos];
+      if (typed[pos] !== expectedCh) {
+        marksRef.current.push({
+          t,
+          wpm,
+          expected: expectedWord,
+          typed,
+          kind: "error",
+          wordKey: engine.lifetimeWords,
+          at: pos,
+        });
+      }
     },
+    onFinish: (engine) => finish(engine, true),
   });
+
+  useEffect(() => {
+    if (!running || phase !== "racing") return;
+    const id = window.setInterval(() => {
+      const started = startedAtRef.current;
+      if (!started || done.current) return;
+      const elapsed = (Date.now() - started) / 1000;
+      const engine = typing.engineRef.current;
+      samplesRef.current = [
+        ...samplesRef.current,
+        { t: elapsed, wpm: calcWpm(engine.correctChars, elapsed / 60) },
+      ];
+    }, 400);
+    return () => window.clearInterval(id);
+  }, [phase, running, typing.engineRef]);
 
   useEffect(() => {
     if (phase !== "racing" || !running) return;
@@ -396,11 +534,7 @@ export function PracticeScreen() {
       setLeft(remaining);
       if (remaining <= 0) {
         const engine = typing.engineRef.current;
-        finish({
-          correctChars: engine.correctChars,
-          totalChars: engine.totalChars,
-          finished: startedAtRef.current !== 0,
-        });
+        finish(engine, startedAtRef.current !== 0);
       }
     }, 100);
     return () => window.clearInterval(id);
@@ -414,11 +548,7 @@ export function PracticeScreen() {
     if (!startedAtRef.current) return;
     const remaining = typing.engine.words.length - typing.engine.wordIndex;
     if (remaining > 0 || typing.engine.typed.length > 0) return;
-    finish({
-      correctChars: typing.engine.correctChars,
-      totalChars: typing.engine.totalChars,
-      finished: true,
-    });
+    finish(typing.engine, true);
   }, [
     attempt,
     finish,
@@ -441,32 +571,11 @@ export function PracticeScreen() {
       if (!startedAtRef.current || done.current) return;
       event.preventDefault();
       const engine = typing.engineRef.current;
-      finish({
-        correctChars: engine.correctChars,
-        totalChars: engine.totalChars,
-        finished: true,
-      });
+      finish(engine, true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [finish, phase, time, timeOpen, typing.engineRef]);
-
-  const theme: "light" | "dark" =
-    resolvedTheme === "light" ? "light" : "dark";
-
-  const share = useMemo(
-    () => ({
-      name: "solo",
-      wpm: result?.wpm ?? 0,
-      acc: result?.accuracy ?? 0,
-      mode: "practice" as const,
-      place: 0,
-      theme,
-      style: DEFAULT_STYLE,
-      color: DEFAULT_COLOR,
-    }),
-    [result, theme],
-  );
 
   const controls = (
     <div className="flex flex-wrap items-center justify-center gap-4">
@@ -589,8 +698,19 @@ export function PracticeScreen() {
     />
   );
 
+  const remainSec = Math.ceil(left / 1000);
+  const warnAt = time <= 15 ? 5 : 10;
+  const clockUrgent =
+    goal === "time" && time > 0 && running && remainSec <= warnAt;
+
   const clock = (
-    <p className="text-center font-sans text-3xl tabular-nums tracking-wide sm:text-4xl">
+    <p
+      className={
+        clockUrgent
+          ? "text-center font-sans text-3xl tabular-nums tracking-wide text-coral sm:text-4xl"
+          : "text-center font-sans text-3xl tabular-nums tracking-wide sm:text-4xl"
+      }
+    >
       {goal === "words"
         ? time === 0
           ? running
@@ -605,28 +725,7 @@ export function PracticeScreen() {
     </p>
   );
 
-  const body =
-    phase === "results" && result ? (
-      <ResultBoard
-        mode="practice"
-        share={share}
-        onAgain={() => begin({ regen: true })}
-        onRepeat={() => begin({ passage, regen: false })}
-        rows={[
-          {
-            id: "you",
-            name: "",
-            style: DEFAULT_STYLE,
-            color: DEFAULT_COLOR,
-            wpm: result.wpm,
-            accuracy: result.accuracy,
-            place: 1,
-            finished: result.finished,
-            you: true,
-          },
-        ]}
-      />
-    ) : pasteWait ? (
+  const body = pasteWait ? (
       <PasteWaitPane
         onPaste={applyCustomText}
         onPickFile={readCustomFile}
@@ -654,6 +753,9 @@ export function PracticeScreen() {
               }
             : undefined
         }
+        ghost={ghost ?? undefined}
+        ghostStart={raceStart}
+        ghostWords={ghost ? passage.split(/\s+/).filter(Boolean) : undefined}
         chrome={!running || peekChrome}
         recents={usingCustom && (!running || peekChrome) ? recents : undefined}
         onUseRecent={(item) => {
@@ -665,6 +767,29 @@ export function PracticeScreen() {
         onRemoveAllRecents={() => setRecents(clearRecentUploads())}
       />
     ) : null;
+
+  if (phase === "results" && result) {
+    return (
+      <div className="relative w-full">
+        <SoloResults
+          stats={result}
+          onNew={() => begin({ regen: true })}
+          onRepeat={() =>
+            begin({ passage: result.replayPassage, regen: false })
+          }
+          onCompete={() => {
+            setGhost(result.ghost);
+            begin({
+              passage: result.replayPassage,
+              regen: false,
+              compete: true,
+            });
+          }}
+        />
+        <Toast message={toast} onClear={() => setToast(null)} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -692,13 +817,7 @@ export function PracticeScreen() {
         <div className="absolute inset-x-0 top-0 z-20 pt-16">{controls}</div>
       )}
       {timeModal}
-      <div
-        className={
-          phase === "results"
-            ? "flex min-h-0 flex-1 flex-col overflow-y-auto"
-            : "flex min-h-0 flex-1 flex-col overflow-visible"
-        }
-      >
+      <div className="flex min-h-0 flex-1 flex-col overflow-visible">
         <div className="my-auto flex w-full -translate-y-12 flex-col gap-10 py-10">
           {clock}
           {body}

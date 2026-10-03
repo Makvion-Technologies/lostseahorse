@@ -1,5 +1,5 @@
-import { HomeScreen } from "@/components/screens/HomeScreen";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <HomeScreen />;
+  redirect("/solo");
 }

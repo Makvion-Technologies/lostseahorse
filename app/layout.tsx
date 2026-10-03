@@ -31,6 +31,11 @@ export const metadata: Metadata = {
   },
   description: "Type. Race. Feed your seahorse.",
   applicationName: "lost seahorse",
+  icons: {
+    icon: "/brand/favicon-seahorse.png",
+    shortcut: "/brand/favicon-seahorse.png",
+    apple: "/brand/favicon-seahorse.png",
+  },
   openGraph: {
     title: "lost seahorse",
     description: "Type. Race. Feed your seahorse.",

@@ -19,7 +19,7 @@ export function useTypingSession(opts: {
   resetKey?: number;
   infinite?: boolean;
   moreWords?: () => string[];
-  onKey?: (key: string) => void;
+  onKey?: (key: string, engine: TypingEngine) => void;
   onFinish?: (engine: TypingEngine) => void;
 }) {
   const [engine, setEngine] = useState(() =>
@@ -96,7 +96,7 @@ export function useTypingSession(opts: {
       const result = applyKey(current, event.key);
       if (result === "ignore") return;
       refill(current);
-      onKeyRef.current?.(event.key);
+      onKeyRef.current?.(event.key, current);
       const copy: TypingEngine = { ...current };
       publish(copy);
       if (copy.finished) onFinishRef.current?.(copy);

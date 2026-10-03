@@ -29,6 +29,10 @@ export type WordExtras = {
 
 const PUNCT = [",", ".", "?", "!", ";", ":"] as const;
 
+function stem(word: string): string {
+  return word.replace(/[^A-Za-z0-9]+/g, "").toLowerCase();
+}
+
 function pickWord(level: Level, rng: () => number): string {
   if (level === "easy") return pick(EASY, rng);
   if (level === "medium") {
@@ -57,16 +61,35 @@ function flavorWord(
   return word;
 }
 
+function nextWord(
+  level: Level,
+  extras: WordExtras | undefined,
+  rng: () => number,
+  previous: string,
+): string {
+  let word = flavorWord(pickWord(level, rng), extras, rng);
+  let tries = 0;
+  while (previous && stem(word) === stem(previous) && tries < 16) {
+    word = flavorWord(pickWord(level, rng), extras, rng);
+    tries += 1;
+  }
+  return word;
+}
+
 export function generateWords(opts: {
   level: Level;
   count: number;
   rng: () => number;
   extras?: WordExtras;
+  avoid?: string;
 }): string[] {
   const words: string[] = [];
   const target = Math.max(1, opts.count);
+  let previous = opts.avoid ?? "";
   while (words.length < target) {
-    words.push(flavorWord(pickWord(opts.level, opts.rng), opts.extras, opts.rng));
+    const word = nextWord(opts.level, opts.extras, opts.rng, previous);
+    words.push(word);
+    previous = word;
   }
   return words;
 }
@@ -87,15 +110,13 @@ export function generatePassage(opts: {
   const words: string[] = [];
   let chars = 0;
 
+  let previous = "";
   while (chars < target) {
-    const word = flavorWord(
-      pickWord(opts.level, opts.rng),
-      opts.extras,
-      opts.rng,
-    );
+    const word = nextWord(opts.level, opts.extras, opts.rng, previous);
     const extra = words.length === 0 ? word.length : word.length + 1;
     if (chars + extra > MAX_CHARS) break;
     words.push(word);
+    previous = word;
     chars += extra;
     if (words.length > 120) break;
   }

@@ -1,15 +1,11 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { OceanBackground } from "@/components/ocean/OceanBackground";
 import { Header } from "./Header";
 import { cn } from "@/lib/cn";
 
 export function SiteShell({ children }: { children: React.ReactNode }) {
-  const home = usePathname() === "/";
-  const width = home
-    ? "max-w-6xl"
-    : "max-w-[min(90rem,calc(100vw-10rem))]";
+  const width = "max-w-[min(90rem,calc(100vw-10rem))]";
 
   return (
     <div className="relative flex min-h-dvh flex-col">

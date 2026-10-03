@@ -8,6 +8,13 @@ import {
 
 export const SETUP_KEY = "lostseahorse.setup";
 
+export const DEFAULT_SETUP = {
+  time: 30 as TimeLimit,
+  level: "medium" as const,
+  extras: { punctuation: false, numbers: false },
+  goal: "time" as const,
+};
+
 export type SetupExtras = {
   punctuation: boolean;
   numbers: boolean;
@@ -20,18 +27,12 @@ export function loadSetup(): {
   extras: SetupExtras;
   goal: GoalMode;
 } {
-  const empty = {
-    time: 30 as TimeLimit,
-    level: "medium" as const,
-    extras: { punctuation: false, numbers: false },
-    goal: "time" as const,
-  };
-  if (typeof window === "undefined") return empty;
+  if (typeof window === "undefined") return DEFAULT_SETUP;
   try {
     const raw = window.sessionStorage.getItem(SETUP_KEY);
-    if (!raw) return empty;
+    if (!raw) return DEFAULT_SETUP;
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return empty;
+    if (!parsed || typeof parsed !== "object") return DEFAULT_SETUP;
     const data = parsed as {
       time?: unknown;
       level?: unknown;
@@ -41,8 +42,8 @@ export function loadSetup(): {
       goal?: unknown;
     };
     return {
-      time: isTimeLimit(data.time) ? data.time : 30,
-      level: isLevel(data.level) ? data.level : "medium",
+      time: isTimeLimit(data.time) ? data.time : DEFAULT_SETUP.time,
+      level: isLevel(data.level) ? data.level : DEFAULT_SETUP.level,
       timeLabel:
         typeof data.timeLabel === "string" && data.timeLabel.trim()
           ? data.timeLabel.trim()
@@ -54,7 +55,7 @@ export function loadSetup(): {
       goal: data.goal === "words" ? "words" : "time",
     };
   } catch {
-    return empty;
+    return DEFAULT_SETUP;
   }
 }
 
