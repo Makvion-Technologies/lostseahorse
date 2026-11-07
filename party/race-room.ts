@@ -1,4 +1,5 @@
-import type * as Party from "partykit/server";
+import { Server, type Connection } from "partyserver";
+import type { Env } from "./env";
 import { buildStrokes, targetWpm, type Stroke } from "../lib/ai/typer";
 import { generatePassage, generateWords } from "../lib/generatePassage";
 import {
@@ -44,7 +45,7 @@ import {
   type TypingEngine,
 } from "../lib/typing";
 import { calcAccuracy, calcWpm } from "../lib/wpm";
-import { clientIp, gateOrigin, isInternal, rateLimitCreate } from "./origin";
+import { clientIp, isInternal, rateLimitCreate } from "./origin";
 import { lookupProfile, profilesStub, recordBotBoard, recordProfileStats, type ProfilesStub } from "./profiles";
 import { isBoardLength } from "../lib/leaderboard";
 
@@ -77,8 +78,8 @@ type InternalPlayer = {
   lastProgressAt: number;
 };
 
-export default class RaceRoom implements Party.Server {
-  options: Party.ServerOptions = { hibernate: false };
+export class RaceRoom extends Server<Env> {
+  static options = { hibernate: false };
 
   settings: RoomSettings = { time: 30, level: "easy" };
   mode: GameMode = "friends";
@@ -99,24 +100,14 @@ export default class RaceRoom implements Party.Server {
   joinTimes = new Map<string, number[]>();
   aiTimers: ReturnType<typeof setTimeout>[] = [];
 
-  /** Cached room id: PartyKit forbids reading `room.id` inside onAlarm. */
+  /** Cached room id (this.name), used everywhere below. */
   roomCode = "";
-  /** Cached profiles stub: timed races end in onAlarm, where `context.parties` throws. */
+  /** Profiles registry client (timed races record stats from onAlarm). */
   profiles: ProfilesStub | null = null;
 
-  constructor(readonly room: Party.Room) {}
-
-  static onBeforeConnect(req: Party.Request) {
-    return gateOrigin(req);
-  }
-
-  static onBeforeRequest(req: Party.Request) {
-    return gateOrigin(req);
-  }
-
-  async onRequest(req: Party.Request) {
-    this.roomCode = this.room.id;
-    this.profiles ??= profilesStub(this.room);
+  async onRequest(req: Request) {
+    this.roomCode = this.name;
+    this.profiles ??= profilesStub(this.env);
     const url = new URL(req.url);
     if (req.method === "POST" && url.pathname.endsWith("/setup")) {
       if (!isInternal(req) && !rateLimitCreate(clientIp(req))) {
@@ -138,10 +129,10 @@ export default class RaceRoom implements Party.Server {
     return new Response("Not found", { status: 404 });
   }
 
-  onConnect(connection: Party.Connection) {
-    this.roomCode = this.room.id;
-    this.profiles ??= profilesStub(this.room);
-    if (!isValidRoomCode(this.room.id) && this.room.id.length > 32) {
+  onConnect(connection: Connection) {
+    this.roomCode = this.name;
+    this.profiles ??= profilesStub(this.env);
+    if (!isValidRoomCode(this.name) && this.name.length > 32) {
       connection.send(encode({ type: "error", message: "Invalid room." }));
       connection.close();
       return;
@@ -149,7 +140,7 @@ export default class RaceRoom implements Party.Server {
     this.sendState(connection);
   }
 
-  onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
+  onMessage(sender: Connection, message: string | ArrayBuffer | ArrayBufferView) {
     if (typeof message !== "string") return;
     if (message.length > MAX_MESSAGE_BYTES) return;
     const parsed = parseJsonEvent(message);
@@ -164,7 +155,7 @@ export default class RaceRoom implements Party.Server {
     else if (data.type === "finish") this.handleFinish(sender);
   }
 
-  onClose(connection: Party.Connection) {
+  onClose(connection: Connection) {
     this.joinTimes.delete(connection.id);
     const player = this.findByConnection(connection.id);
     if (!player || player.isAi) return;
@@ -181,6 +172,8 @@ export default class RaceRoom implements Party.Server {
   }
 
   async onAlarm() {
+    this.roomCode ||= this.name;
+    this.profiles ??= profilesStub(this.env);
     const kind = this.alarmKind;
     this.alarmKind = null;
     if (kind === "end" && this.status === "racing") {
@@ -208,7 +201,7 @@ export default class RaceRoom implements Party.Server {
     this.fillAi = setup.fillAi;
     if (this.mode === "stranger" && this.autoStart) {
       this.alarmKind = "join";
-      void this.room.storage.setAlarm(Date.now() + JOIN_WINDOW_MS);
+      void this.ctx.storage.setAlarm(Date.now() + JOIN_WINDOW_MS);
     }
     for (const ai of [...(setup.ai ? [setup.ai] : []), ...(setup.ais ?? [])]) {
       if (this.players.has(ai.id) || this.players.size >= ROOM_CAP) continue;
@@ -231,7 +224,7 @@ export default class RaceRoom implements Party.Server {
     this.broadcastState();
   }
 
-  private async handleJoin(sender: Party.Connection, data: Record<string, unknown>) {
+  private async handleJoin(sender: Connection, data: Record<string, unknown>) {
     const existing = this.findByConnection(sender.id);
     if (existing) {
       this.sendState(sender);
@@ -256,7 +249,7 @@ export default class RaceRoom implements Party.Server {
     }
 
     // Names come from the profile server, never from client text.
-    const profile = await lookupProfile(this.room, data.pid);
+    const profile = await lookupProfile(this.env, data.pid);
     if (!profile) {
       sender.send(encode({ type: "error", message: "Pick your racer name first." }));
       return;
@@ -318,7 +311,7 @@ export default class RaceRoom implements Party.Server {
     this.maybeAutoStart();
   }
 
-  private handleFillAi(sender: Party.Connection, data: Record<string, unknown>) {
+  private handleFillAi(sender: Connection, data: Record<string, unknown>) {
     const player = this.findByConnection(sender.id);
     if (!player || player.id !== this.hostId) return;
     if (this.status !== "lobby") return;
@@ -326,7 +319,7 @@ export default class RaceRoom implements Party.Server {
     this.broadcastState();
   }
 
-  private handleStart(sender: Party.Connection) {
+  private handleStart(sender: Connection) {
     const player = this.findByConnection(sender.id);
     if (!player || player.id !== this.hostId) return;
     if (this.status !== "lobby") return;
@@ -341,7 +334,7 @@ export default class RaceRoom implements Party.Server {
   }
 
   /** Friends rooms: anyone on the results screen can take the room back to its lobby. */
-  private handleAgain(sender: Party.Connection) {
+  private handleAgain(sender: Connection) {
     if (this.mode !== "friends" || this.status !== "results") return;
     const player = this.findByConnection(sender.id);
     if (!player) return;
@@ -376,7 +369,7 @@ export default class RaceRoom implements Party.Server {
       : FRIENDS_MAX;
   }
 
-  private handleTyped(sender: Party.Connection, data: Record<string, unknown>) {
+  private handleTyped(sender: Connection, data: Record<string, unknown>) {
     if (this.status !== "racing") return;
     const player = this.findByConnection(sender.id);
     if (!player || player.isAi || !player.connected || player.engine.finished) return;
@@ -400,7 +393,7 @@ export default class RaceRoom implements Party.Server {
     if (this.allDone()) this.finishRace();
   }
 
-  private handleFinish(sender: Party.Connection) {
+  private handleFinish(sender: Connection) {
     if (this.status !== "racing") return;
     const player = this.findByConnection(sender.id);
     if (!player || player.isAi) return;
@@ -427,7 +420,7 @@ export default class RaceRoom implements Party.Server {
     this.status = "countdown";
     this.countdownEndsAt = now + COUNTDOWN_MS;
     this.alarmKind = "go";
-    void this.room.storage.setAlarm(this.countdownEndsAt);
+    void this.ctx.storage.setAlarm(this.countdownEndsAt);
     this.broadcastState();
   }
 
@@ -490,7 +483,7 @@ export default class RaceRoom implements Party.Server {
     if (this.settings.goal !== "words" && this.settings.time > 0) {
       this.endsAt = now + this.settings.time * 1000;
       this.alarmKind = "end";
-      void this.room.storage.setAlarm(this.endsAt);
+      void this.ctx.storage.setAlarm(this.endsAt);
     } else {
       this.endsAt = null;
       this.alarmKind = null;
@@ -528,7 +521,7 @@ export default class RaceRoom implements Party.Server {
         void recordProfileStats(this.profiles, p.pid, row.wpm, board);
       }
     }
-    this.broadcast({ type: "results", results, endedAt });
+    this.broadcastEvent({ type: "results", results, endedAt });
     this.broadcastState();
   }
 
@@ -622,7 +615,7 @@ export default class RaceRoom implements Party.Server {
   private emitProgress(player: InternalPlayer, now: number) {
     if (now - player.lastProgressAt < 40) return;
     player.lastProgressAt = now;
-    this.broadcast({
+    this.broadcastEvent({
       type: "progress",
       id: player.id,
       progress: progressOf(player.engine),
@@ -748,17 +741,17 @@ export default class RaceRoom implements Party.Server {
   }
 
   private broadcastState() {
-    for (const conn of this.room.getConnections()) {
+    for (const conn of this.getConnections()) {
       this.sendState(conn);
     }
   }
 
-  private sendState(connection: Party.Connection) {
+  private sendState(connection: Connection) {
     connection.send(encode({ type: "state", state: this.snapshot(connection.id) }));
   }
 
-  private broadcast(event: ServerEvent) {
-    this.room.broadcast(encode(event));
+  private broadcastEvent(event: ServerEvent) {
+    this.broadcast(encode(event));
   }
 
   private findByConnection(connectionId: string) {

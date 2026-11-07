@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ShareBar } from "./ShareBar";
 import { WpmChart } from "./WpmChart";
-import { Toast } from "@/components/ui/Toast";
 import {
   Icons,
   InlineStat,
@@ -114,7 +113,6 @@ export function ResultBoard({
 }) {
   const you = rows.find((row) => row.you) ?? rows[0];
   const winner = rows[0];
-  const [toast, setToast] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
 
   const total = rows.length;
@@ -218,14 +216,6 @@ export function ResultBoard({
             tone: "accent" as const,
             onClick: () => setSheet(true),
           },
-          {
-            key: "donate",
-            label: "Donate",
-            icon: Icons.heart,
-            tone: "quiet" as const,
-            onClick: () =>
-              setToast("Whoa, eager. We're not ready for your money yet."),
-          },
         ]}
         overlay={
           sheet ? (
@@ -242,7 +232,6 @@ export function ResultBoard({
           ) : null
         }
       />
-      <Toast message={toast} onClear={() => setToast(null)} tone="notice" />
     </>
   );
 }

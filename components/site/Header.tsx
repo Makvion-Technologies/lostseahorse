@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { Toast } from "@/components/ui/Toast";
 import { cn } from "@/lib/cn";
 
 type Mode = "Solo" | "Stranger" | "Friends";
@@ -121,7 +120,6 @@ function HeaderWithParams({ className }: { className?: string }) {
 }
 
 function HeaderView({ className, stranger }: { className?: string; stranger: boolean }) {
-  const [toast, setToast] = useState<string | null>(null);
   const pathname = usePathname();
   const mode = useMode(stranger);
   const home = HOME[mode] || pathname || "/";
@@ -157,18 +155,8 @@ function HeaderView({ className, stranger }: { className?: string; stranger: boo
         <div className="header-extras flex shrink-0 items-center gap-2 text-sm sm:gap-4">
           <ModeSelect mode={mode} />
           <ThemeToggle />
-          <button
-            type="button"
-            onClick={() =>
-              setToast("Whoa, eager. We're not ready for your money yet.")
-            }
-            className="min-h-9 cursor-pointer px-1 text-muted hover:text-ink"
-          >
-            Donate
-          </button>
         </div>
       </header>
-      <Toast message={toast} onClear={() => setToast(null)} tone="notice" />
     </>
   );
 }

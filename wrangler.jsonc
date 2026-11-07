@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Realtime server (PartyServer on Cloudflare Durable Objects). The Next.js site stays on Vercel.
+  "name": "lostseahorse",
+  "main": "party/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "Main", "class_name": "RaceRoom" },
+      { "name": "Matchmaker", "class_name": "Matchmaker" },
+      { "name": "Profiles", "class_name": "Profiles" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RaceRoom", "Matchmaker", "Profiles"] }],
+  "observability": { "enabled": true }
+}

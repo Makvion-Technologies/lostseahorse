@@ -43,3 +43,7 @@ next-env.d.ts
 
 # PartyKit local dev state
 .partykit/
+
+# cloudflare (wrangler dev state, local secrets)
+.wrangler
+.dev.vars*

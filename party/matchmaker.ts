@@ -1,4 +1,5 @@
-import type * as Party from "partykit/server";
+import { Server, getServerByName, type Connection, type ConnectionContext } from "partyserver";
+import type { Env } from "./env";
 import { pickAi } from "../lib/ai/pool";
 import { bandForWpm } from "../lib/bands";
 import {
@@ -23,7 +24,7 @@ import {
   type StyleId,
   type TimeLimit,
 } from "../lib/types";
-import { INTERNAL_HEADER, clientIp, gateOrigin } from "./origin";
+import { INTERNAL_HEADER, clientIp, internalUrl } from "./origin";
 import { lookupProfile } from "./profiles";
 
 /** Match not full after a random 13-20s: fill the empty seats with bots. */
@@ -40,7 +41,7 @@ const IP_WINDOW_MS = 60_000;
 const IP_MAX = 20;
 
 type Waiting = {
-  connection: Party.Connection;
+  connection: Connection;
   clientId: string;
   name: string;
   style: StyleId;
@@ -61,25 +62,19 @@ function bucketOf(w: Waiting): string {
   return [w.goal, w.time, w.level, w.punctuation ? 1 : 0, w.numbers ? 1 : 0, w.size].join(":");
 }
 
-export default class Matchmaker implements Party.Server {
-  options: Party.ServerOptions = { hibernate: false };
+export class Matchmaker extends Server<Env> {
+  static options = { hibernate: false };
   waiting: Waiting[] = [];
   msgTimes = new Map<string, number[]>();
   ipTimes = new Map<string, number[]>();
   lonelyTimers = new Map<string, ReturnType<typeof setTimeout>>();
   closed = new Set<string>();
 
-  constructor(readonly room: Party.Room) {}
-
-  static onBeforeConnect(req: Party.Request) {
-    return gateOrigin(req);
-  }
-
-  onConnect(connection: Party.Connection, ctx: Party.ConnectionContext) {
+  onConnect(connection: Connection, ctx: ConnectionContext) {
     connection.setState({ ip: clientIp(ctx.request) });
   }
 
-  onMessage(message: string | ArrayBuffer, sender: Party.Connection) {
+  onMessage(sender: Connection, message: string | ArrayBuffer | ArrayBufferView) {
     if (typeof message !== "string") return;
     const data = asRecord(parseJsonEvent(message));
     if (!data || typeof data.type !== "string") return;
@@ -99,24 +94,24 @@ export default class Matchmaker implements Party.Server {
     void this.handleQueue(sender, data);
   }
 
-  onClose(connection: Party.Connection) {
+  onClose(connection: Connection) {
     this.closed.add(connection.id);
     setTimeout(() => this.closed.delete(connection.id), 60_000);
     this.remove(connection.id);
     this.msgTimes.delete(connection.id);
   }
 
-  onError(connection: Party.Connection) {
+  onError(connection: Connection) {
     this.onClose(connection);
   }
 
-  private async handleQueue(sender: Party.Connection, data: Record<string, unknown>) {
+  private async handleQueue(sender: Connection, data: Record<string, unknown>) {
     if (!isLevel(data.level) || !isTimeLimit(data.time) || data.time > 600) {
       sender.send(encode({ type: "error", message: "Invalid queue." }));
       return;
     }
     // The server owns names: look the racer up by profile id, ignore client text.
-    const profile = await lookupProfile(this.room, data.pid);
+    const profile = await lookupProfile(this.env, data.pid);
     if (this.closed.has(sender.id)) return;
     if (!profile) {
       sender.send(encode({ type: "error", message: "Pick your racer name first." }));
@@ -250,8 +245,8 @@ export default class Matchmaker implements Party.Server {
 
   private async setupRoom(payload: SetupPayload, code: string): Promise<boolean> {
     try {
-      const stub = this.room.context.parties.main.get(code);
-      const res = await stub.fetch("/setup", {
+      const stub = await getServerByName(this.env.Main, code);
+      const res = await stub.fetch(internalUrl("main", code, "/setup"), {
         method: "POST",
         headers: { "content-type": "application/json", [INTERNAL_HEADER]: "1" },
         body: JSON.stringify(payload),
@@ -286,7 +281,7 @@ export default class Matchmaker implements Party.Server {
 
   /** Drop entries whose socket is gone or that sat in the queue too long. */
   private sweep() {
-    const live = new Set([...this.room.getConnections()].map((c) => c.id));
+    const live = new Set([...this.getConnections()].map((c) => c.id));
     const now = Date.now();
     for (const w of [...this.waiting]) {
       if (!live.has(w.connection.id) || now - w.queuedAt > STALE_MS) {

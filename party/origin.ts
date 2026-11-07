@@ -32,6 +32,11 @@ export function clientIp(req: Headered): string {
   );
 }
 
+/** URL for a Durable Object-to-Durable Object fetch (same /parties/<party>/<room> shape as public calls). */
+export function internalUrl(party: string, room: string, path: string): string {
+  return `https://internal/parties/${party}/${encodeURIComponent(room)}${path}`;
+}
+
 /** Set by the matchmaker on room setup calls (party-to-party, no client IP). */
 export const INTERNAL_HEADER = "x-lostseahorse-internal";
 

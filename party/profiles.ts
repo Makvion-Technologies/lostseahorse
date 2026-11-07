@@ -1,4 +1,5 @@
-import type * as Party from "partykit/server";
+import { Server, getServerByName } from "partyserver";
+import type { Env } from "./env";
 import {
   PROFILE_ID_RE,
   RENAME_COOLDOWN_MS,
@@ -10,7 +11,7 @@ import {
   type Profile,
 } from "../lib/profileName";
 import { MAX_PLAUSIBLE_WPM } from "../lib/party/events";
-import { clientIp, gateOrigin, isInternal } from "./origin";
+import { clientIp, internalUrl, isInternal } from "./origin";
 import {
   BOARD_KEEP,
   BOARD_SHOW,
@@ -38,7 +39,7 @@ const WINDOW_MS = 60_000;
 const MAX_WRITES = 10;
 const MAX_READS = 120;
 
-function cors(req: Party.Request): Record<string, string> {
+function cors(req: Request): Record<string, string> {
   const origin = req.headers.get("origin");
   return {
     "access-control-allow-origin": origin || "*",
@@ -48,22 +49,13 @@ function cors(req: Party.Request): Record<string, string> {
   };
 }
 
-export default class Profiles implements Party.Server {
+export class Profiles extends Server<Env> {
+  static options = { hibernate: false };
   hits = new Map<string, number[]>();
   /** Serialises writes so two claims of one name can't interleave. */
   lock: Promise<unknown> = Promise.resolve();
 
-  constructor(readonly room: Party.Room) {}
-
-  static onBeforeRequest(req: Party.Request) {
-    return gateOrigin(req);
-  }
-
-  static onBeforeConnect() {
-    return new Response("Not here", { status: 404 });
-  }
-
-  async onRequest(req: Party.Request): Promise<Response> {
+  async onRequest(req: Request): Promise<Response> {
     const headers = { ...cors(req), "content-type": "application/json" };
     const reply = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status, headers });
@@ -89,7 +81,7 @@ export default class Profiles implements Party.Server {
         const id = url.searchParams.get("id") ?? "";
         const problem = nameProblem(name);
         if (problem) return reply({ available: false, reason: problem });
-        const owner = await this.room.storage.get<string>(`n:${nameKey(name)}`);
+        const owner = await this.ctx.storage.get<string>(`n:${nameKey(name)}`);
         const available = !owner || owner === id;
         return reply({ available, reason: available ? null : "That name is taken." });
       }
@@ -114,14 +106,14 @@ export default class Profiles implements Party.Server {
     if (path.endsWith("/name")) {
       if (!internal && !this.allow(`w:${ip}`, MAX_WRITES)) return reply({ error: "Slow down." }, 429);
       return this.serial(async () => {
-        const result = await this.setName(body.id, body.name);
+        const result = await this.claimName(body.id, body.name);
         return "error" in result ? reply(result, 409) : reply(result);
       });
     }
     return reply({ error: "Not found" }, 404);
   }
 
-  private async setName(rawId: unknown, rawName: unknown): Promise<{ profile: Profile } | { error: string }> {
+  private async claimName(rawId: unknown, rawName: unknown): Promise<{ profile: Profile } | { error: string }> {
     if (typeof rawId !== "string" || !PROFILE_ID_RE.test(rawId)) return { error: "Bad id." };
     const problem = nameProblem(rawName);
     if (problem) return { error: problem };
@@ -130,7 +122,7 @@ export default class Profiles implements Party.Server {
     const existing = await this.get(rawId);
 
     if (existing && existing.name === name) return { profile: existing };
-    const owner = await this.room.storage.get<string>(`n:${key}`);
+    const owner = await this.ctx.storage.get<string>(`n:${key}`);
     if (owner && owner !== rawId) return { error: "That name is taken." };
 
     if (!existing) {
@@ -140,7 +132,7 @@ export default class Profiles implements Party.Server {
         createdAt: Date.now(),
         stats: { races: 0, bestWpm: 0, lastWpm: 0 },
       };
-      await this.room.storage.put({ [`p:${rawId}`]: profile, [`n:${key}`]: rawId });
+      await this.ctx.storage.put({ [`p:${rawId}`]: profile, [`n:${key}`]: rawId });
       return { profile };
     }
 
@@ -168,8 +160,8 @@ export default class Profiles implements Party.Server {
       name,
       renames: caseOnly ? recent : [...recent, now],
     };
-    if (!caseOnly) await this.room.storage.delete(`n:${nameKey(existing.name)}`);
-    await this.room.storage.put({ [`p:${rawId}`]: profile, [`n:${key}`]: rawId });
+    if (!caseOnly) await this.ctx.storage.delete(`n:${nameKey(existing.name)}`);
+    await this.ctx.storage.put({ [`p:${rawId}`]: profile, [`n:${key}`]: rawId });
     return { profile };
   }
 
@@ -195,7 +187,7 @@ export default class Profiles implements Party.Server {
       bestWpm: Math.max(profile.stats.bestWpm, Math.round(wpm)),
       lastWpm: Math.round(wpm),
     };
-    await this.room.storage.put(`p:${id}`, { ...profile, stats });
+    await this.ctx.storage.put(`p:${id}`, { ...profile, stats });
     const board = body.board as { length?: unknown; level?: unknown; acc?: unknown } | undefined;
     if (board && isBoardLength(board.length) && isBoardLevel(board.level)) {
       await this.recordBoard(GLOBAL_BOARD, id, wpm, Number(board.acc));
@@ -210,9 +202,9 @@ export default class Profiles implements Party.Server {
    * Idempotent via the mig:legacy-best flag; never lowers a better entry.
    */
   private async migrateLegacy() {
-    if (await this.room.storage.get("mig:legacy-best")) return;
-    const board = (await this.room.storage.get<Board>(`lb:${GLOBAL_BOARD}`)) ?? {};
-    const profiles = await this.room.storage.list<Profile>({ prefix: "p:" });
+    if (await this.ctx.storage.get("mig:legacy-best")) return;
+    const board = (await this.ctx.storage.get<Board>(`lb:${GLOBAL_BOARD}`)) ?? {};
+    const profiles = await this.ctx.storage.list<Profile>({ prefix: "p:" });
     for (const p of profiles.values()) {
       const best = p.stats?.bestWpm ?? 0;
       if (!(p.stats?.races > 0) || !(best > 0) || best > MAX_PLAUSIBLE_WPM) continue;
@@ -221,12 +213,12 @@ export default class Profiles implements Party.Server {
       board[p.id] = { wpm: best, acc: 0, at: p.createdAt ?? Date.now() };
     }
     for (const drop of rerank(board, null).slice(BOARD_KEEP)) delete board[drop];
-    await this.room.storage.put({ [`lb:${GLOBAL_BOARD}`]: board, "mig:legacy-best": Date.now() });
+    await this.ctx.storage.put({ [`lb:${GLOBAL_BOARD}`]: board, "mig:legacy-best": Date.now() });
   }
 
   private async recordBoard(key: string, id: string, wpm: number, rawAcc: number, botName?: string) {
     await this.migrateLegacy();
-    const board = (await this.room.storage.get<Board>(`lb:${key}`)) ?? {};
+    const board = (await this.ctx.storage.get<Board>(`lb:${key}`)) ?? {};
     const acc = Number.isFinite(rawAcc) ? Math.max(0, Math.min(100, rawAcc)) : 0;
     const prev = board[id];
     const score = Math.round(wpm * 100) / 100;
@@ -238,20 +230,20 @@ export default class Profiles implements Party.Server {
       : { wpm: score, acc: Math.round(acc * 10) / 10, at: Date.now(), ...kept };
     const order = rerank(board, prev ? null : id);
     for (const drop of order.slice(BOARD_KEEP)) delete board[drop];
-    await this.room.storage.put(`lb:${key}`, board);
+    await this.ctx.storage.put(`lb:${key}`, board);
   }
 
   private async leaderboard(you: string) {
     await this.migrateLegacy();
     const key = GLOBAL_BOARD;
-    const board = (await this.room.storage.get<Board>(`lb:${key}`)) ?? {};
+    const board = (await this.ctx.storage.get<Board>(`lb:${key}`)) ?? {};
     const order = rankBoard(board);
     const shown = order.slice(0, BOARD_SHOW);
     const youRank = order.indexOf(you) + 1;
     const ids = youRank > BOARD_SHOW ? [...shown, you] : shown;
     const profiles = new Map<string, Profile>();
     for (let i = 0; i < ids.length; i += 100) {
-      const got = await this.room.storage.get<Profile>(ids.slice(i, i + 100).map((id) => `p:${id}`));
+      const got = await this.ctx.storage.get<Profile>(ids.slice(i, i + 100).map((id) => `p:${id}`));
       for (const p of got.values()) profiles.set(p.id, p);
     }
     const row = (id: string, rank: number): LeaderRow => {
@@ -274,7 +266,7 @@ export default class Profiles implements Party.Server {
   }
 
   private get(id: string) {
-    return this.room.storage.get<Profile>(`p:${id}`);
+    return this.ctx.storage.get<Profile>(`p:${id}`);
   }
 
   private serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -297,12 +289,12 @@ export default class Profiles implements Party.Server {
 }
 
 /** Party-to-party lookup used by the matchmaker and race rooms. */
-export async function lookupProfile(room: Party.Room, id: unknown): Promise<Profile | null> {
+export async function lookupProfile(env: Env, id: unknown): Promise<Profile | null> {
   if (typeof id !== "string" || !PROFILE_ID_RE.test(id)) return null;
   try {
-    const res = await room.context.parties.profiles
-      .get(PROFILE_ROOM)
-      .fetch(`/me?id=${encodeURIComponent(id)}`, { headers: { "x-lostseahorse-internal": "1" } });
+    const res = await profilesStub(env).fetch(`/me?id=${encodeURIComponent(id)}`, {
+      headers: { "x-lostseahorse-internal": "1" },
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { profile?: Profile | null };
     return data.profile ?? null;
@@ -311,11 +303,16 @@ export async function lookupProfile(room: Party.Room, id: unknown): Promise<Prof
   }
 }
 
-/** The registry stub. Grab it outside onAlarm: PartyKit forbids `context.parties` there. */
-export type ProfilesStub = ReturnType<Party.Room["context"]["parties"][string]["get"]>;
+/** Party-to-party client for the registry: fetch(path) on the Profiles Durable Object. */
+export type ProfilesStub = { fetch(path: string, init?: RequestInit): Promise<Response> };
 
-export function profilesStub(room: Party.Room): ProfilesStub {
-  return room.context.parties.profiles.get(PROFILE_ROOM);
+export function profilesStub(env: Env): ProfilesStub {
+  return {
+    async fetch(path, init) {
+      const stub = await getServerByName(env.Profiles, PROFILE_ROOM);
+      return stub.fetch(internalUrl("profiles", PROFILE_ROOM, path), init);
+    },
+  };
 }
 
 export async function recordProfileStats(

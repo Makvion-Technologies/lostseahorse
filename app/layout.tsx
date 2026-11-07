@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { SiteShell } from "@/components/site/SiteShell";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const sans = Geist({
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ThemeProvider>
           <SiteShell>{children}</SiteShell>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
