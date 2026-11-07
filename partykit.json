@@ -4,6 +4,7 @@
   "main": "party/race-room.ts",
   "compatibilityDate": "2024-09-19",
   "parties": {
-    "matchmaker": "party/matchmaker.ts"
+    "matchmaker": "party/matchmaker.ts",
+    "profiles": "party/profiles.ts"
   }
 }

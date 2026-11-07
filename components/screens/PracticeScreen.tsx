@@ -1,23 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { CompareResults } from "@/components/typing/CompareResults";
 import { SoloResults } from "@/components/typing/SoloResults";
 import { PasteWaitPane, TypingPane } from "@/components/typing/TypingPane";
+import { cn } from "@/lib/cn";
 import { useTypingSession } from "@/hooks/useTypingSession";
+import { useTypingFocus } from "@/hooks/useTypingFocus";
 import { generateWords } from "@/lib/generatePassage";
 import { updateWpm } from "@/lib/storage";
 import { calcWpm } from "@/lib/wpm";
 import {
   buildRunStats,
-  fillWordMarks,
-  wordMarks,
+  closeRunMarks,
+  recordKeyMarks,
   type ChartMark,
   type GhostFrame,
   type ReplayEvent,
   type RunStats,
   type WpmSample,
 } from "@/lib/runStats";
-import type { TypingEngine } from "@/lib/typing";
+import { typedWordsOf, type TypingEngine } from "@/lib/typing";
 import { DEFAULT_SETUP, loadSetup, saveSetup } from "@/lib/setup";
 import { formatClock } from "@/lib/formatTime";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -80,13 +83,14 @@ export function PracticeScreen() {
   const [attempt, setAttempt] = useState(0);
   const [timeOpen, setTimeOpen] = useState(false);
   const [running, setRunning] = useState(false);
-  const [peekChrome, setPeekChrome] = useState(false);
   const [customText, setCustomText] = useState("");
   const [usingCustom, setUsingCustom] = useState(false);
   const [pasteWait, setPasteWait] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentUpload[]>([]);
   const [ghost, setGhost] = useState<GhostFrame[] | null>(null);
+  // The run being raced in Compete mode, kept for the comparison results.
+  const [previous, setPrevious] = useState<RunStats | null>(null);
   const [raceStart, setRaceStart] = useState(0);
   const levelRef = useRef(level);
   const extrasRef = useRef(extras);
@@ -121,9 +125,11 @@ export function PracticeScreen() {
     if (pasteWait || usingCustom) return;
     generatedTimeRef.current = { time, timeLabel };
   }, [pasteWait, time, timeLabel, usingCustom]);
-  useEffect(() => {
+  const [recentsLoaded, setRecentsLoaded] = useState(false);
+  if (client && !recentsLoaded) {
+    setRecentsLoaded(true);
     setRecents(loadRecentUploads());
-  }, []);
+  }
 
   if (client && !passage) {
     const stored = loadSetup();
@@ -145,9 +151,14 @@ export function PracticeScreen() {
       rng: Math.random,
       extras: stored.extras,
     }).join(" ");
-    fullWordsRef.current = first.split(/\s+/).filter(Boolean);
     setPassage(first);
   }
+  useEffect(() => {
+    // First passage is generated during render; mirror it into the ref here.
+    if (passage && fullWordsRef.current.length === 0) {
+      fullWordsRef.current = passage.split(/\s+/).filter(Boolean);
+    }
+  }, [passage]);
 
   const begin = useCallback(
     (opts?: {
@@ -186,7 +197,10 @@ export function PracticeScreen() {
       ghostRef.current = [];
       replayRef.current = [];
       competeRef.current = Boolean(opts?.compete);
-      if (!opts?.compete) setGhost(null);
+      if (!opts?.compete) {
+        setGhost(null);
+        setPrevious(null);
+      }
       setRaceStart(0);
       setRunning(false);
       setEndsAt(0);
@@ -244,24 +258,18 @@ export function PracticeScreen() {
       const raw = Math.max(1 / 60, (Date.now() - started) / 1000);
       const elapsed =
         goal === "time" && time > 0 ? Math.min(time, raw) : raw;
-      if (engine.typed.length > 0) {
-        const wpmNow = calcWpm(engine.correctChars, elapsed / 60);
-        const expected = engine.words[engine.wordIndex] ?? "";
-        const typed = engine.typed;
-        const wordKey = engine.lifetimeWords;
-        marksRef.current = fillWordMarks(
-          marksRef.current,
-          wordKey,
-          expected,
-          typed,
-        );
-        const hasWord = marksRef.current.some((mark) => mark.wordKey === wordKey);
-        if (!hasWord) {
-          marksRef.current = [
-            ...marksRef.current,
-            ...wordMarks(elapsed, wpmNow, expected, typed, wordKey),
-          ];
-        }
+      marksRef.current = closeRunMarks(marksRef.current, engine, elapsed);
+      const lastT = samplesRef.current.at(-1)?.t ?? 0;
+      if (elapsed - lastT > 0.05) {
+        // Close the graph on the exact final numbers.
+        samplesRef.current = [
+          ...samplesRef.current,
+          {
+            t: elapsed,
+            wpm: calcWpm(engine.netChars, elapsed / 60),
+            raw: calcWpm(engine.totalChars, elapsed / 60),
+          },
+        ];
       }
       const stats = buildRunStats({
         engine,
@@ -277,6 +285,7 @@ export function PracticeScreen() {
         ghost: ghostRef.current,
         replayPassage: fullWordsRef.current.join(" "),
         replay: replayRef.current,
+        typedWords: typedWordsOf(engine),
       });
       updateWpm(stats.wpm);
       setResult(stats);
@@ -286,39 +295,17 @@ export function PracticeScreen() {
     [goal, time],
   );
 
-  useEffect(() => {
-    if (!running || phase !== "racing") {
-      setPeekChrome(false);
-      return;
-    }
-    const onMove = () => setPeekChrome(true);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea")) return;
-      setPeekChrome(false);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [phase, running]);
-  useEffect(() => {
-    const hide = running && phase === "racing" && !peekChrome;
-    if (hide) document.documentElement.dataset.typingFocus = "1";
-    else delete document.documentElement.dataset.typingFocus;
-    return () => {
-      delete document.documentElement.dataset.typingFocus;
-    };
-  }, [peekChrome, phase, running]);
+
+  const { peek: peekChrome, setPeek: setPeekChrome } = useTypingFocus(
+    running && phase === "racing",
+  );
 
   const armClock = useCallback(() => {
     if (startedAtRef.current) return;
     const now = Date.now();
     startedAtRef.current = now;
     setRaceStart(now);
+    setPeekChrome(false);
     setRunning(true);
     if (goal === "time" && time > 0) {
       setEndsAt(now + time * 1000);
@@ -327,7 +314,7 @@ export function PracticeScreen() {
       setEndsAt(0);
       setLeft(0);
     }
-  }, [goal, time]);
+  }, [goal, setPeekChrome, time]);
 
   const applyCustomText = useCallback(
     (raw: string) => {
@@ -397,7 +384,11 @@ export function PracticeScreen() {
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea")) return;
+      if (
+        target?.closest("input, textarea") &&
+        !target.closest("[data-typing-input]")
+      )
+        return;
       if (!pasteWaitRef.current) return;
       event.preventDefault();
       if (event.clipboardData?.files?.[0]) {
@@ -458,48 +449,7 @@ export function PracticeScreen() {
         letter: engine.typed.length,
       });
       replayRef.current.push({ t, key });
-      const wpm = calcWpm(engine.correctChars, t / 60);
-      if (key === " ") {
-        const index = engine.wordIndex - 1;
-        if (index < 0) return;
-        const expected = engine.words[index] ?? "";
-        const typed = engine.committed[index] ?? "";
-        const wordKey = engine.lifetimeWords - 1;
-        marksRef.current = fillWordMarks(
-          marksRef.current,
-          wordKey,
-          expected,
-          typed,
-        );
-        if (typed.length < expected.length) {
-          marksRef.current.push({
-            t,
-            wpm,
-            expected,
-            typed,
-            kind: "missed",
-            wordKey,
-            at: typed.length,
-          });
-        }
-        return;
-      }
-      if (key.length !== 1) return;
-      const expectedWord = engine.words[engine.wordIndex] ?? "";
-      const typed = engine.typed;
-      const pos = typed.length - 1;
-      const expectedCh = expectedWord[pos];
-      if (typed[pos] !== expectedCh) {
-        marksRef.current.push({
-          t,
-          wpm,
-          expected: expectedWord,
-          typed,
-          kind: "error",
-          wordKey: engine.lifetimeWords,
-          at: pos,
-        });
-      }
+      marksRef.current = recordKeyMarks(marksRef.current, key, engine, t);
     },
     onFinish: (engine) => finish(engine, true),
   });
@@ -513,7 +463,11 @@ export function PracticeScreen() {
       const engine = typing.engineRef.current;
       samplesRef.current = [
         ...samplesRef.current,
-        { t: elapsed, wpm: calcWpm(engine.correctChars, elapsed / 60) },
+        {
+          t: elapsed,
+          wpm: calcWpm(engine.netChars, elapsed / 60),
+          raw: calcWpm(engine.totalChars, elapsed / 60),
+        },
       ];
     }, 400);
     return () => window.clearInterval(id);
@@ -549,20 +503,7 @@ export function PracticeScreen() {
     const remaining = typing.engine.words.length - typing.engine.wordIndex;
     if (remaining > 0 || typing.engine.typed.length > 0) return;
     finish(typing.engine, true);
-  }, [
-    attempt,
-    finish,
-    goal,
-    phase,
-    time,
-    typing.engine.correctChars,
-    typing.engine.lifetimeWords,
-    typing.engine.resetKey,
-    typing.engine.totalChars,
-    typing.engine.typed,
-    typing.engine.wordIndex,
-    typing.engine.words.length,
-  ]);
+  }, [attempt, finish, goal, phase, time, typing.engine]);
 
   useEffect(() => {
     if (phase !== "racing" || time !== 0 || timeOpen) return;
@@ -578,7 +519,7 @@ export function PracticeScreen() {
   }, [finish, phase, time, timeOpen, typing.engineRef]);
 
   const controls = (
-    <div className="flex flex-wrap items-center justify-center gap-4">
+    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 lg:gap-2 xl:gap-3 min-[1500px]:gap-4 lg:max-[1499px]:[&_button]:!px-2.5">
       <SegmentedControl
         ariaLabel="Time"
         layoutId="solo-time"
@@ -698,19 +639,8 @@ export function PracticeScreen() {
     />
   );
 
-  const remainSec = Math.ceil(left / 1000);
-  const warnAt = time <= 15 ? 5 : 10;
-  const clockUrgent =
-    goal === "time" && time > 0 && running && remainSec <= warnAt;
-
   const clock = (
-    <p
-      className={
-        clockUrgent
-          ? "text-center font-sans text-3xl tabular-nums tracking-wide text-coral sm:text-4xl"
-          : "text-center font-sans text-3xl tabular-nums tracking-wide sm:text-4xl"
-      }
-    >
+    <p className="text-center font-sans text-[clamp(1.75rem,1.4rem+1.5vw,2.5rem)] leading-none tabular-nums tracking-wide">
       {goal === "words"
         ? time === 0
           ? running
@@ -768,6 +698,27 @@ export function PracticeScreen() {
       />
     ) : null;
 
+  const raceAgainst = (run: RunStats) => {
+    setGhost(run.ghost);
+    setPrevious(run);
+    begin({ passage: run.replayPassage, regen: false, compete: true });
+  };
+
+  if (phase === "results" && result && previous) {
+    return (
+      <div className="relative w-full">
+        <CompareResults
+          stats={result}
+          previous={previous}
+          onNew={() => begin({ regen: true })}
+          onTryAgain={() => raceAgainst(previous)}
+          onRaceThis={() => raceAgainst(result)}
+        />
+        <Toast message={toast} onClear={() => setToast(null)} />
+      </div>
+    );
+  }
+
   if (phase === "results" && result) {
     return (
       <div className="relative w-full">
@@ -777,14 +728,7 @@ export function PracticeScreen() {
           onRepeat={() =>
             begin({ passage: result.replayPassage, regen: false })
           }
-          onCompete={() => {
-            setGhost(result.ghost);
-            begin({
-              passage: result.replayPassage,
-              regen: false,
-              compete: true,
-            });
-          }}
+          onCompete={() => raceAgainst(result)}
         />
         <Toast message={toast} onClear={() => setToast(null)} />
       </div>
@@ -793,7 +737,7 @@ export function PracticeScreen() {
 
   return (
     <div
-      className="relative flex h-[calc(100dvh-12rem)] flex-col"
+      className="relative flex min-h-[calc(100dvh-10rem)] w-full min-w-0 flex-col sm:min-h-[calc(100dvh-12rem)]"
       onDragOver={(event) => {
         event.preventDefault();
       }}
@@ -813,12 +757,24 @@ export function PracticeScreen() {
         }
       }}
     >
-      {running && !peekChrome ? null : (
-        <div className="absolute inset-x-0 top-0 z-20 pt-16">{controls}</div>
-      )}
+      {/*
+        Controls stay in normal document flow (only faded out while typing),
+        so the clock below can never slide underneath them, however many
+        rows they wrap onto on narrow screens.
+      */}
+      <div
+        className={cn(
+          "relative z-20 pt-2 transition-opacity duration-300 sm:pt-6 lg:pt-10",
+          running && !peekChrome && "pointer-events-none opacity-0",
+        )}
+        aria-hidden={running && !peekChrome ? true : undefined}
+        inert={running && !peekChrome}
+      >
+        {controls}
+      </div>
       {timeModal}
-      <div className="flex min-h-0 flex-1 flex-col overflow-visible">
-        <div className="my-auto flex w-full -translate-y-12 flex-col gap-10 py-10">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="my-auto flex w-full flex-col gap-6 pt-8 pb-32 sm:gap-10 sm:pt-10 sm:pb-36">
           {clock}
           {body}
         </div>

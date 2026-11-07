@@ -13,13 +13,17 @@ export type Save = {
   wpm?: number;
   races: number;
   unlocked: string[];
+  /** Public race nickname; defaults to the ocean name. */
+  nick?: string;
+  /** The nickname may be changed once. */
+  nickEdited?: boolean;
 };
 
 const DEFAULT_UNLOCKED = STYLES.map((style) => style.id);
 
 export const DEFAULT_SAVE: Save = {
   name: "",
-  theme: "system",
+  theme: "dark",
   races: 0,
   unlocked: [...DEFAULT_UNLOCKED],
 };
@@ -37,7 +41,7 @@ export function parseSave(raw: unknown): Save {
 
   return {
     name: sanitizeName(data.name, ""),
-    theme: isTheme(data.theme) ? data.theme : "system",
+    theme: isTheme(data.theme) ? data.theme : "dark",
     wpm:
       typeof data.wpm === "number" && Number.isFinite(data.wpm)
         ? Math.max(0, Math.round(data.wpm))
@@ -47,6 +51,10 @@ export function parseSave(raw: unknown): Save {
         ? Math.max(0, Math.round(data.races))
         : 0,
     unlocked: unlocked.length ? unlocked : [...DEFAULT_UNLOCKED],
+    ...(typeof data.nick === "string" && sanitizeName(data.nick, "").length >= 2
+      ? { nick: sanitizeName(data.nick, "") }
+      : {}),
+    ...(data.nickEdited === true ? { nickEdited: true } : {}),
   };
 }
 
@@ -87,6 +95,11 @@ export function writeSave(partial: Partial<Save>): Save {
     window.dispatchEvent(new Event("lostseahorse:save"));
   }
   return next;
+}
+
+/** Name shown to other racers. */
+export function raceName(save: Save): string {
+  return save.nick || save.name;
 }
 
 export function updateWpm(raceWpm: number): Save {

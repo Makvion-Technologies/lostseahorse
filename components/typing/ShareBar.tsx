@@ -28,19 +28,23 @@ export function ShareBar({ payload }: { payload: SharePayload }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Button onClick={nativeShare}>Share on X</Button>
-      <Button href={intent} external variant="ghost">
-        Open intent
-      </Button>
+    <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,20rem)_1fr]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={image}
         alt="Share card"
         width={320}
         height={168}
-        className="mt-4 w-full max-w-sm rounded-2xl border border-line"
+        className="aspect-[1200/630] w-full rounded-2xl border border-line object-cover"
       />
+      <div className="flex flex-col gap-2 xs:flex-row sm:flex-col sm:items-start">
+        <Button className="min-h-11" onClick={nativeShare}>
+          Share on X
+        </Button>
+        <Button href={intent} external variant="ghost" className="min-h-11">
+          Open intent
+        </Button>
+      </div>
     </div>
   );
 }

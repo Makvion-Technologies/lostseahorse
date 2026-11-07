@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { ComingSoonRedirect } from "@/components/site/ComingSoonRedirect";
+import { FriendsScreen } from "@/components/screens/FriendsScreen";
 
 export const metadata: Metadata = {
   title: "Friends",
 };
 
 export default function FriendsPage() {
-  return <ComingSoonRedirect />;
+  return <FriendsScreen />;
 }

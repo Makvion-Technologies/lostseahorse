@@ -1,8 +1,9 @@
-import type { TypingEngine } from "@/lib/typing";
+import { typedWordsOf, type TypingEngine } from "@/lib/typing";
 import { calcAccuracy, calcWpm } from "@/lib/wpm";
 import type { GoalMode, Level } from "@/lib/types";
 
-export type WpmSample = { t: number; wpm: number };
+/** `raw` = raw WPM (every typed char, errors included) at time `t`. */
+export type WpmSample = { t: number; wpm: number; raw?: number };
 
 export type GhostFrame = {
   t: number;
@@ -13,6 +14,11 @@ export type GhostFrame = {
 export type ReplayEvent = {
   t: number;
   key: string;
+};
+
+export type TypedWord = {
+  expected: string;
+  typed: string;
 };
 
 export function ghostAt(frames: GhostFrame[], t: number): GhostFrame {
@@ -173,6 +179,7 @@ export type RunStats = {
   ghost: GhostFrame[];
   replayPassage: string;
   replay: ReplayEvent[];
+  typedWords: TypedWord[];
 };
 
 export function charBreakdown(engine: TypingEngine) {
@@ -180,21 +187,19 @@ export function charBreakdown(engine: TypingEngine) {
   let missed = 0;
   let incorrect = 0;
 
-  const score = (expected: string, typed: string) => {
+  const score = (expected: string, typed: string, inProgress = false) => {
     extra += Math.max(0, typed.length - expected.length);
-    missed += Math.max(0, expected.length - typed.length);
+    // The word still being typed when time ran out isn't "missed" yet.
+    if (!inProgress) missed += Math.max(0, expected.length - typed.length);
     const n = Math.min(expected.length, typed.length);
     for (let i = 0; i < n; i++) {
       if (expected[i] !== typed[i]) incorrect += 1;
     }
   };
 
-  for (let i = 0; i < engine.wordIndex; i++) {
-    score(engine.words[i] ?? "", engine.committed[i] ?? "");
-  }
-  if (engine.typed.length > 0) {
-    score(engine.words[engine.wordIndex] ?? "", engine.typed);
-  }
+  const words = typedWordsOf(engine);
+  const live = engine.typed.length > 0 ? words.length - 1 : -1;
+  words.forEach((word, i) => score(word.expected, word.typed, i === live));
 
   return { extra, missed, incorrect, correct: engine.correctChars };
 }
@@ -224,11 +229,12 @@ export function buildRunStats(opts: {
   ghost: GhostFrame[];
   replayPassage: string;
   replay: ReplayEvent[];
+  typedWords: TypedWord[];
 }): RunStats {
   const minutes = Math.max(opts.elapsed / 60, 1 / 60);
   const parts = charBreakdown(opts.engine);
   return {
-    wpm: calcWpm(opts.engine.correctChars, minutes),
+    wpm: calcWpm(opts.engine.netChars, minutes),
     rawWpm: calcWpm(opts.engine.totalChars, minutes),
     accuracy: calcAccuracy(opts.engine.correctChars, opts.engine.totalChars),
     elapsed: opts.elapsed,
@@ -251,5 +257,71 @@ export function buildRunStats(opts: {
     ghost: opts.ghost,
     replayPassage: opts.replayPassage,
     replay: opts.replay,
+    typedWords: opts.typedWords,
   };
+}
+
+/**
+ * Chart marks for one keystroke (errors as they happen, missed letters when a
+ * word is skipped). Shared by Solo and Strangers so both graphs match.
+ */
+export function recordKeyMarks(
+  marks: ChartMark[],
+  key: string,
+  engine: TypingEngine,
+  t: number,
+): ChartMark[] {
+  const wpm = calcWpm(engine.netChars, t / 60);
+  if (key === " ") {
+    const index = engine.wordIndex - 1;
+    if (index < 0) return marks;
+    const expected = engine.words[index] ?? "";
+    const typed = engine.committed[index] ?? "";
+    const wordKey = engine.lifetimeWords - 1;
+    const next = fillWordMarks(marks, wordKey, expected, typed);
+    if (typed.length < expected.length) {
+      next.push({
+        t,
+        wpm,
+        expected,
+        typed,
+        kind: "missed",
+        wordKey,
+        at: typed.length,
+      });
+    }
+    return next;
+  }
+  if (key.length !== 1) return marks;
+  const expectedWord = engine.words[engine.wordIndex] ?? "";
+  const typed = engine.typed;
+  const pos = typed.length - 1;
+  if (typed[pos] !== expectedWord[pos]) {
+    marks.push({
+      t,
+      wpm,
+      expected: expectedWord,
+      typed,
+      kind: "error",
+      wordKey: engine.lifetimeWords,
+      at: pos,
+    });
+  }
+  return marks;
+}
+
+/** Marks for the word still in progress when the run ends. */
+export function closeRunMarks(
+  marks: ChartMark[],
+  engine: TypingEngine,
+  elapsed: number,
+): ChartMark[] {
+  if (engine.typed.length === 0) return marks;
+  const wpmNow = calcWpm(engine.netChars, elapsed / 60);
+  const expected = engine.words[engine.wordIndex] ?? "";
+  const typed = engine.typed;
+  const wordKey = engine.lifetimeWords;
+  const next = fillWordMarks(marks, wordKey, expected, typed);
+  if (next.some((mark) => mark.wordKey === wordKey)) return next;
+  return [...next, ...wordMarks(elapsed, wpmNow, expected, typed, wordKey)];
 }

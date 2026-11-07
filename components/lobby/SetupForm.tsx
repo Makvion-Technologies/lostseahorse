@@ -9,6 +9,8 @@ import { ExtraToggles, GoalToggle } from "@/components/ui/ExtraToggles";
 import { customTimeSlot } from "@/components/ui/ClockGlyph";
 import { isPresetTime } from "@/lib/types";
 import { useSave } from "@/hooks/useSave";
+import { useProfile } from "@/hooks/useProfile";
+import { NameGate } from "@/components/profile/NamePicker";
 import {
   LEVELS,
   TIMES,
@@ -27,7 +29,23 @@ export type SetupValue = {
   goal: GoalMode;
 };
 
-export function SetupForm({
+export function SetupForm(props: SetupFormProps) {
+  return (
+    <NameGate>
+      <SetupFormInner {...props} />
+    </NameGate>
+  );
+}
+
+type SetupFormProps = {
+  title: string;
+  subtitle?: string;
+  actionLabel: string;
+  lockSettings?: boolean;
+  onSubmit: (value: SetupValue) => void;
+};
+
+function SetupFormInner({
   title,
   subtitle,
   actionLabel,
@@ -40,7 +58,9 @@ export function SetupForm({
   lockSettings?: boolean;
   onSubmit: (value: SetupValue) => void;
 }) {
-  const { save, ready } = useSave();
+  const { ready: saveReady } = useSave();
+  const me = useProfile().profile;
+  const ready = saveReady && !!me;
   const [time, setTime] = useState<TimeLimit>(() => loadSetup().time);
   const [timeLabel, setTimeLabel] = useState<string | undefined>(
     () => loadSetup().timeLabel,
@@ -71,7 +91,7 @@ export function SetupForm({
         You are
       </p>
       <p className="mt-2 font-display text-2xl italic" suppressHydrationWarning>
-        {ready && save.name ? save.name : "drifting…"}
+        {me ? me.name : "drifting…"}
       </p>
 
       {!lockSettings ? (
@@ -149,10 +169,10 @@ export function SetupForm({
       />
       <Button
         className="mt-8 w-full"
-        disabled={!ready || !save.name}
+        disabled={!ready}
         onClick={() =>
           onSubmit({
-            name: save.name,
+            name: me?.name ?? "",
             time,
             level,
             punctuation: extras.punctuation,

@@ -29,6 +29,9 @@ const csp = [
   .trim();
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [{ source: "/race", destination: "/stranger", permanent: true }];
+  },
   async headers() {
     return [
       {

@@ -6,11 +6,13 @@ import { SetupForm } from "@/components/lobby/SetupForm";
 import { Card } from "@/components/ui/Card";
 import { useMatchmaker } from "@/hooks/useMatchmaker";
 import { useSave } from "@/hooks/useSave";
+import { useProfile } from "@/hooks/useProfile";
 import { DEFAULT_COLOR, DEFAULT_STYLE } from "@/lib/types";
 
 export function RaceQueueScreen() {
   const router = useRouter();
   const { save } = useSave();
+  const me = useProfile().profile;
   const { status, code, error, queue } = useMatchmaker(true);
 
   useEffect(() => {
@@ -45,8 +47,9 @@ export function RaceQueueScreen() {
       subtitle="Match someone near your pace. If the kelp is empty, it still starts."
       actionLabel="Find a racer"
       onSubmit={(value) => {
+        if (!me) return;
         queue({
-          name: value.name,
+          pid: me.id,
           style: DEFAULT_STYLE,
           color: DEFAULT_COLOR,
           level: value.level,

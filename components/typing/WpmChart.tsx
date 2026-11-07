@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChartMark, WpmSample } from "@/lib/runStats";
 
 function sparseTicks(max: number, maxLabels = 4): number[] {
@@ -38,19 +38,27 @@ function formatAxisTime(seconds: number, span: number): string {
   return `${total}s`;
 }
 
-function wpmAt(samples: WpmSample[], t: number): number {
+function valueAt(
+  samples: WpmSample[],
+  t: number,
+  pick: (sample: WpmSample) => number,
+): number {
   if (!samples.length) return 0;
-  if (t <= samples[0]!.t) return samples[0]!.wpm;
+  if (t <= samples[0]!.t) return pick(samples[0]!);
   for (let i = 1; i < samples.length; i++) {
     const next = samples[i]!;
     const prev = samples[i - 1]!;
     if (t <= next.t) {
       const span = next.t - prev.t || 1;
-      return Math.round(prev.wpm + ((next.wpm - prev.wpm) * (t - prev.t)) / span);
+      const a = pick(prev);
+      return Math.round(a + ((pick(next) - a) * (t - prev.t)) / span);
     }
   }
-  return samples[samples.length - 1]!.wpm;
+  return pick(samples[samples.length - 1]!);
 }
+
+const pickWpm = (sample: WpmSample) => sample.wpm;
+const pickRaw = (sample: WpmSample) => sample.raw ?? sample.wpm;
 
 function WordPreview({
   expected,
@@ -109,14 +117,33 @@ function curvePath(points: { x: number; y: number }[]): string {
 export function WpmChart({
   samples,
   marks = [],
+  ghostSamples,
 }: {
   samples: WpmSample[];
   marks?: ChartMark[];
+  /** A previous run drawn as a muted line for comparison. */
+  ghostSamples?: WpmSample[];
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 720, h: 220 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const w = Math.max(200, Math.round(entry.contentRect.width));
+      const h = Math.max(90, Math.round(entry.contentRect.height));
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [hover, setHover] = useState<{
     t: number;
     wpm: number;
+    raw: number | null;
+    prev: number | null;
     x: number;
     y: number;
     mark: ChartMark | null;
@@ -130,19 +157,30 @@ export function WpmChart({
     );
   }
 
-  const width = 720;
-  const height = 220;
-  const left = 48;
-  const right = 16;
-  const top = 14;
-  const bottom = 36;
+  const width = size.w;
+  const height = size.h;
+  const axisFont = width >= 640 ? 14 : 12;
+  const left = axisFont * 2 + 34;
+  const right = 20;
+  const top = Math.ceil(axisFont / 2) + 4;
+  const bottom = axisFont * 2 + 16;
   const plotW = width - left - right;
   const plotH = height - top - bottom;
 
-  const peak = Math.max(1, ...samples.map((sample) => sample.wpm));
+  const ghost = ghostSamples && ghostSamples.length >= 2 ? ghostSamples : null;
+  const hasRaw = samples.every((sample) => typeof sample.raw === "number");
+  const peak = Math.max(
+    1,
+    ...samples.map((sample) => (hasRaw ? pickRaw(sample) : sample.wpm)),
+    ...(ghost ? ghost.map((sample) => sample.wpm) : []),
+  );
   const yTicks = sparseTicks(peak);
   const yMax = yTicks[yTicks.length - 1] ?? peak;
-  const maxT = Math.max(0.001, samples[samples.length - 1]?.t ?? 1);
+  const maxT = Math.max(
+    0.001,
+    samples[samples.length - 1]?.t ?? 1,
+    ghost ? (ghost[ghost.length - 1]?.t ?? 0) : 0,
+  );
   const xTicks = sparseTicks(maxT).filter((tick) => tick <= maxT + 1e-6);
 
   const xOf = (t: number) => left + (t / maxT) * plotW;
@@ -153,9 +191,17 @@ export function WpmChart({
     y: yOf(sample.wpm),
   }));
   const line = curvePath(pts);
+  const rawLine = hasRaw
+    ? curvePath(
+        samples.map((sample) => ({ x: xOf(sample.t), y: yOf(pickRaw(sample)) })),
+      )
+    : "";
+  const ghostLine = ghost
+    ? curvePath(ghost.map((sample) => ({ x: xOf(sample.t), y: yOf(sample.wpm) })))
+    : "";
   const area = `${line} L ${xOf(maxT)} ${yOf(0)} L ${xOf(0)} ${yOf(0)} Z`;
 
-  const onMove = (event: React.MouseEvent<SVGSVGElement>) => {
+  const onMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return;
     const ctm = svg.getScreenCTM();
@@ -165,7 +211,9 @@ export function WpmChart({
     point.y = event.clientY;
     const local = point.matrixTransform(ctm.inverse());
     const t = Math.min(maxT, Math.max(0, ((local.x - left) / plotW) * maxT));
-    const wpm = wpmAt(samples, t);
+    const wpm = valueAt(samples, t, pickWpm);
+    const raw = hasRaw ? valueAt(samples, t, pickRaw) : null;
+    const prev = ghost ? valueAt(ghost, t, pickWpm) : null;
     const hoverX = xOf(t);
     let nearest: ChartMark | null = null;
     let best = 3;
@@ -176,19 +224,23 @@ export function WpmChart({
         nearest = mark;
       }
     }
-    setHover({ t, wpm, x: hoverX, y: yOf(wpm), mark: nearest });
+    setHover({ t, wpm, raw, prev, x: hoverX, y: yOf(wpm), mark: nearest });
   };
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={boxRef} className="relative h-full w-full">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
         className="h-full w-full cursor-crosshair"
         role="img"
         aria-label="WPM over time"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
+        onPointerMove={onMove}
+        onPointerDown={onMove}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setHover(null);
+        }}
+        style={{ touchAction: "pan-y" }}
       >
         {yTicks.map((tick) => (
           <text
@@ -198,7 +250,7 @@ export function WpmChart({
             textAnchor="end"
             dominantBaseline="middle"
             fill="var(--muted)"
-            fontSize="7"
+            fontSize={axisFont}
             fontFamily="var(--font-sans)"
           >
             {tick}
@@ -208,10 +260,10 @@ export function WpmChart({
           <text
             key={`x-${tick}`}
             x={xOf(tick)}
-            y={top + plotH + 14}
+            y={top + plotH + axisFont + 6}
             textAnchor="middle"
             fill="var(--muted)"
-            fontSize="7"
+            fontSize={axisFont}
             fontFamily="var(--font-sans)"
           >
             {formatAxisTime(tick, maxT)}
@@ -236,22 +288,22 @@ export function WpmChart({
           opacity="0.45"
         />
         <text
-          x={14}
+          x={axisFont}
           y={top + plotH / 2}
           fill="var(--muted)"
-          fontSize="7"
+          fontSize={axisFont}
           fontFamily="var(--font-sans)"
           letterSpacing="0.12em"
           textAnchor="middle"
-          transform={`rotate(-90 14 ${top + plotH / 2})`}
+          transform={`rotate(-90 ${axisFont} ${top + plotH / 2})`}
         >
           WPM
         </text>
         <text
           x={left + plotW / 2}
-          y={height - 4}
+          y={height - 3}
           fill="var(--muted)"
-          fontSize="7"
+          fontSize={axisFont}
           fontFamily="var(--font-sans)"
           letterSpacing="0.12em"
           textAnchor="middle"
@@ -263,6 +315,29 @@ export function WpmChart({
           fill="color-mix(in srgb, var(--teal) 14%, transparent)"
           stroke="none"
         />
+        {ghostLine ? (
+          <path
+            d={ghostLine}
+            fill="none"
+            stroke="var(--muted)"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity="0.55"
+          />
+        ) : null}
+        {rawLine ? (
+          <path
+            d={rawLine}
+            fill="none"
+            stroke="var(--muted)"
+            strokeWidth="1.6"
+            strokeDasharray="4 4"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity="0.7"
+          />
+        ) : null}
         <path
           d={line}
           fill="none"
@@ -345,6 +420,18 @@ export function WpmChart({
           <p className="text-muted">
             {formatAxisTime(hover.t, maxT)} ·{" "}
             <span className="text-teal">{hover.wpm} wpm</span>
+            {hover.raw !== null ? (
+              <>
+                {" · "}
+                <span>{hover.raw} raw</span>
+              </>
+            ) : null}
+            {hover.prev !== null ? (
+              <>
+                {" · "}
+                <span>{hover.prev} prev</span>
+              </>
+            ) : null}
           </p>
           {hover.mark ? (
             <p className="mt-1">

@@ -32,6 +32,14 @@ export function clientIp(req: Headered): string {
   );
 }
 
+/** Set by the matchmaker on room setup calls (party-to-party, no client IP). */
+export const INTERNAL_HEADER = "x-lostseahorse-internal";
+
+/** True for matchmaker -> room calls: they carry no client IP, so they would all share one rate-limit bucket. */
+export function isInternal(req: Headered): boolean {
+  return req.headers.get(INTERNAL_HEADER) === "1" && !req.headers.get("cf-connecting-ip");
+}
+
 const WINDOW_MS = 60_000;
 const MAX_CREATES = 8;
 const hits = new Map<string, number[]>();

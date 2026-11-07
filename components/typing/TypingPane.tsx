@@ -85,8 +85,8 @@ export function PasteWaitPane({
   };
 
   return (
-    <div className="flex flex-col gap-10">
-      <div className="relative h-[9.6rem] overflow-hidden font-mono text-[1.55rem] leading-[3.2rem] tracking-wide sm:h-[10.8rem] sm:text-[1.95rem] sm:leading-[3.6rem]">
+    <div className="flex flex-col gap-6 sm:gap-10">
+      <div className="relative h-[5.7em] overflow-hidden font-mono text-[clamp(1.15rem,0.85rem+1.35vw,2.1rem)] leading-[1.9em] tracking-wide">
         <span
           aria-hidden
           className="caret pointer-events-none absolute left-0 z-10 w-[2px] rounded-full bg-teal"
@@ -138,7 +138,7 @@ export function PasteWaitPane({
       <div className="h-px w-full bg-line" />
       <div
         className={cn(
-          "grid min-h-11 grid-cols-[1fr_auto_1fr] items-start gap-4 rounded-2xl px-2 py-3",
+          "grid min-h-11 grid-cols-1 items-start justify-items-center gap-4 rounded-2xl px-2 py-3 text-center sm:grid-cols-[1fr_auto_1fr] sm:justify-items-stretch sm:text-left",
           fileOver && "ring-1 ring-teal",
         )}
         onDragEnter={allowFileDrop}
@@ -149,7 +149,7 @@ export function PasteWaitPane({
         }}
         onDrop={takeDroppedFile}
       >
-        <div className="min-w-0 text-left text-sm tracking-wide text-muted">
+        <div className="min-w-0 text-sm tracking-wide text-muted">
           <p>Supported files:</p>
           <p className="mt-1 text-muted/60">
             {CUSTOM_TEXT_EXTS.map((ext) => ext.toUpperCase()).join(", ")}
@@ -285,10 +285,7 @@ export const TypingPane = memo(function TypingPane({
   }, [engine.typed, engine.wordIndex, engine.words.length]);
 
   useLayoutEffect(() => {
-    if (!ghost?.length) {
-      setGhostCaret((prev) => (prev.visible ? { ...prev, visible: false } : prev));
-      return;
-    }
+    if (!ghost?.length) return;
     const box = boxRef.current;
     const root = rootRef.current;
     if (!box || !root) return;
@@ -360,7 +357,7 @@ export const TypingPane = memo(function TypingPane({
   }, [
     engine.lifetimeWords,
     engine.wordIndex,
-    engine.words.length,
+    engine.words,
     ghost,
     ghostStart,
     ghostWords,
@@ -370,9 +367,9 @@ export const TypingPane = memo(function TypingPane({
     <div className="relative">
     <div
       ref={boxRef}
-      className="relative h-[9.6rem] overflow-hidden sm:h-[10.8rem]"
+      className="relative h-[5.7em] overflow-hidden font-mono text-[clamp(1.15rem,0.85rem+1.35vw,2.1rem)] leading-[1.9em]"
     >
-      {ghostCaret.visible ? (
+      {ghost?.length && ghostCaret.visible ? (
         <motion.span
           aria-hidden
           className="pointer-events-none absolute top-0 left-0 z-[9] w-[2px] rounded-full bg-muted/40"
@@ -399,7 +396,7 @@ export const TypingPane = memo(function TypingPane({
       />
       <p
         ref={rootRef}
-        className="select-none font-mono text-[1.55rem] leading-[3.2rem] tracking-wide sm:text-[1.95rem] sm:leading-[3.6rem]"
+        className="select-none font-mono tracking-wide break-words"
       >
         {engine.words.map((word, wordIndex) => {
           const committed = engine.committed[wordIndex];
@@ -418,7 +415,7 @@ export const TypingPane = memo(function TypingPane({
               key={wordIndex}
               data-word={wordIndex}
               className={cn(
-                "mr-[0.55em] inline-block text-muted/55",
+                "mr-[0.55em] inline-block max-w-full text-muted/55",
                 hasError &&
                   "underline decoration-coral/45 decoration-2 underline-offset-[6px]",
               )}
@@ -468,16 +465,16 @@ export const TypingPane = memo(function TypingPane({
       </p>
     </div>
       {chrome ? (
-      <div className="absolute top-full right-0 left-0 z-10 mt-10 flex flex-col gap-10">
+      <div className="absolute top-full right-0 left-0 z-10 mt-6 flex flex-col gap-6 sm:mt-10 sm:gap-10">
       <div className="h-px w-full bg-line" />
       <div
         className={
           recents
-            ? "grid min-h-11 grid-cols-[1fr_auto_1fr] items-start"
+            ? "grid min-h-11 grid-cols-[1fr_auto] items-start gap-3 sm:grid-cols-[1fr_auto_1fr]"
             : undefined
         }
       >
-        {recents ? <div /> : null}
+        {recents ? <div className="hidden sm:block" /> : null}
         {onClear || onRefresh ? (
         <button
           type="button"

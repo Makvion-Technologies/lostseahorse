@@ -5,7 +5,7 @@ import usePartySocket from "partysocket/react";
 import { partyHost } from "@/lib/env";
 import {
   TYPING_BATCH_MS,
-  parseJsonEvent,
+  parseServerEvent,
   asRecord,
   type ClientEvent,
   type ResultRow,
@@ -16,6 +16,8 @@ export function useRaceRoom(code: string | null) {
   const [state, setState] = useState<RoomState | null>(null);
   const [results, setResults] = useState<ResultRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** serverNow - Date.now(), so countdowns line up across clients. */
+  const [offset, setOffset] = useState(0);
   const batch = useRef("");
   const timer = useRef<number | null>(null);
 
@@ -24,11 +26,15 @@ export function useRaceRoom(code: string | null) {
     room: code ?? "idle",
     enabled: Boolean(code),
     onMessage(event) {
-      const parsed = parseJsonEvent(String(event.data));
+      const parsed = parseServerEvent(String(event.data));
       const data = asRecord(parsed);
       if (!data || typeof data.type !== "string") return;
       if (data.type === "state") {
-        setState(data.state as RoomState);
+        const next = data.state as RoomState;
+        if (typeof next.serverNow === "number") setOffset(next.serverNow - Date.now());
+        setState(next);
+        // Friends "race again": back in the lobby, so drop the old results.
+        if (next.status !== "results") setResults(null);
       } else if (data.type === "progress") {
         setState((prev) => {
           if (!prev) return prev;
@@ -83,6 +89,7 @@ export function useRaceRoom(code: string | null) {
     state,
     results,
     error,
+    offset,
     youId: socket.id,
     send,
     sendTyped,

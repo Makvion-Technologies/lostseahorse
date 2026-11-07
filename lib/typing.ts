@@ -10,21 +10,66 @@ export type TypingEngine = {
   errors: number;
   totalChars: number;
   correctChars: number;
+  /** Chars that count toward net WPM: fully correct words + their spaces,
+   * plus the current word's correct prefix. Partial matches inside a wrong
+   * word don't count (standard net WPM). */
+  netChars: number;
   finished: boolean;
   infinite?: boolean;
   lockedCorrect: number;
+  lockedNet: number;
+  /** Words dropped from the window in infinite mode, kept for results. */
+  history: { expected: string; typed: string }[];
   lifetimeWords: number;
   resetKey?: number;
 };
 
 const EXTRA_CAP = 12;
 
+const CHAR_MAP: Record<string, string> = {
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201A": "'",
+  "\u201B": "'",
+  "\u2032": "'",
+  "\u00B4": "'",
+  "\u201C": '"',
+  "\u201D": '"',
+  "\u201E": '"',
+  "\u201F": '"',
+  "\u2033": '"',
+  "\u00AB": '"',
+  "\u00BB": '"',
+  "\u2010": "-",
+  "\u2011": "-",
+  "\u2012": "-",
+  "\u2013": "-",
+  "\u2014": "-",
+  "\u2015": "-",
+  "\u2212": "-",
+  "\u2026": "...",
+  "\u00A0": " ",
+  "\u2007": " ",
+  "\u202F": " ",
+};
+
+/**
+ * Normalizes characters that browsers, OS keyboards (iOS/Android smart
+ * punctuation, macOS substitutions) or pasted text may produce in a
+ * different-but-equivalent form, so they always match the passage.
+ */
+export function normalizeTyped(text: string): string {
+  let out = "";
+  for (const ch of text.normalize("NFC")) out += CHAR_MAP[ch] ?? ch;
+  return out;
+}
+
 export function createEngine(
   passage: string,
   resetKey?: number,
   infinite = false,
 ): TypingEngine {
-  const words = passage.split(/\s+/).filter(Boolean);
+  const words = normalizeTyped(passage).split(/\s+/).filter(Boolean);
   const engine: TypingEngine = {
     passage,
     words,
@@ -35,9 +80,12 @@ export function createEngine(
     errors: 0,
     totalChars: 0,
     correctChars: 0,
+    netChars: 0,
     finished: !infinite && words.length === 0,
     infinite,
     lockedCorrect: 0,
+    lockedNet: 0,
+    history: [],
     lifetimeWords: 0,
     resetKey,
   };
@@ -130,7 +178,7 @@ export function progressOf(engine: TypingEngine): number {
 
 export function appendWords(engine: TypingEngine, next: string[]) {
   if (!next.length) return;
-  engine.words = engine.words.concat(next);
+  engine.words = engine.words.concat(next.map((word) => normalizeTyped(word)));
 }
 
 export function dropPrefix(engine: TypingEngine, count: number) {
@@ -140,8 +188,17 @@ export function dropPrefix(engine: TypingEngine, count: number) {
     const expected = engine.words[i] ?? "";
     const typed = engine.committed[i] ?? "";
     engine.lockedCorrect += matchedChars(expected, typed);
-    if (typed === expected) engine.lockedCorrect += 1;
+    if (typed === expected) {
+      engine.lockedCorrect += 1;
+      engine.lockedNet += expected.length + 1;
+    }
   }
+  engine.history = [
+    ...engine.history,
+    ...engine.words
+      .slice(0, n)
+      .map((expected, i) => ({ expected, typed: engine.committed[i] ?? "" })),
+  ];
   engine.words = engine.words.slice(n);
   engine.committed = engine.committed.slice(n);
   engine.wordIndex -= n;
@@ -165,18 +222,24 @@ export function splitWords(passage: string): { text: string; start: number; end:
 function syncStats(engine: TypingEngine) {
   let index = 0;
   let correct = engine.lockedCorrect;
+  let net = engine.lockedNet;
   for (let i = 0; i < engine.wordIndex; i++) {
     const expected = engine.words[i] ?? "";
     const typed = engine.committed[i] ?? "";
     index += expected.length + (i < engine.words.length - 1 ? 1 : 0);
     correct += matchedChars(expected, typed);
     if (i < engine.words.length - 1 && typed === expected) correct += 1;
+    if (typed === expected) {
+      net += expected.length + (i < engine.words.length - 1 ? 1 : 0);
+    }
   }
   const current = engine.words[engine.wordIndex] ?? "";
   index += engine.typed.length;
   correct += matchedChars(current, engine.typed);
+  if (current.startsWith(engine.typed)) net += engine.typed.length;
   engine.index = index;
   engine.correctChars = correct;
+  engine.netChars = net;
 }
 
 function matchedChars(expected: string, typed: string): number {
@@ -186,4 +249,25 @@ function matchedChars(expected: string, typed: string): number {
     if (expected[i] === typed[i]) count += 1;
   }
   return count;
+}
+
+/** Every word the user typed this run, in order (incl. infinite-mode history
+ * and the in-progress word). */
+export function typedWordsOf(
+  engine: TypingEngine,
+): { expected: string; typed: string }[] {
+  const words = [...engine.history];
+  for (let i = 0; i < engine.wordIndex; i++) {
+    words.push({
+      expected: engine.words[i] ?? "",
+      typed: engine.committed[i] ?? "",
+    });
+  }
+  if (engine.typed.length > 0) {
+    words.push({
+      expected: engine.words[engine.wordIndex] ?? "",
+      typed: engine.typed,
+    });
+  }
+  return words;
 }

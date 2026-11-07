@@ -14,6 +14,8 @@ export function SegmentedControl<T extends string | number>({
   tight,
   locked,
   onLocked,
+  itemClassName,
+  padClassName,
 }: {
   value: T;
   options: { value: T; label: React.ReactNode; ariaLabel?: string }[];
@@ -25,6 +27,10 @@ export function SegmentedControl<T extends string | number>({
   tight?: boolean;
   locked?: boolean;
   onLocked?: () => void;
+  /** Overrides the item padding/text size (e.g. viewport-scaled pills). */
+  itemClassName?: string;
+  /** Overrides the container padding. */
+  padClassName?: string;
 }) {
   const reduce = useReducedMotion();
 
@@ -33,7 +39,8 @@ export function SegmentedControl<T extends string | number>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        "relative flex rounded-xl bg-foam p-1 ring-1 ring-line",
+        "relative flex rounded-xl bg-foam ring-1 ring-line",
+        padClassName ?? "p-1",
         !compact && "w-full",
         locked && "opacity-40",
         className,
@@ -58,7 +65,9 @@ export function SegmentedControl<T extends string | number>({
             className={cn(
               "relative z-10 cursor-pointer items-center justify-center rounded-xl outline-none transition-colors",
               compact ? "flex flex-none" : "flex flex-1",
-              tight
+              itemClassName
+                ? itemClassName
+                : tight
                 ? "px-3 py-1.5 text-sm"
                 : compact
                   ? "px-4 py-1.5 text-sm sm:px-5"

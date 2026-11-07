@@ -3,8 +3,13 @@ import { buildStrokes, targetWpm, type Stroke } from "../lib/ai/typer";
 import { generatePassage, generateWords } from "../lib/generatePassage";
 import {
   MAX_KEYS_PER_BATCH,
+  MAX_KEY_LOG,
+  type KeyLogEntry,
   MAX_KEYS_PER_SEC,
   MAX_MESSAGE_BYTES,
+  MAX_PLAUSIBLE_WPM,
+  FRIENDS_MAX,
+  FRIENDS_MIN,
   ROOM_CAP,
   asRecord,
   parseJsonEvent,
@@ -14,6 +19,7 @@ import {
   type RoomState,
   type RoomStatus,
   type ServerEvent,
+  type SetupAi,
   type SetupPayload,
 } from "../lib/party/events";
 import { hashSeed, mulberry32 } from "../lib/rng";
@@ -38,7 +44,17 @@ import {
   type TypingEngine,
 } from "../lib/typing";
 import { calcAccuracy, calcWpm } from "../lib/wpm";
-import { clientIp, gateOrigin, rateLimitCreate } from "./origin";
+import { clientIp, gateOrigin, isInternal, rateLimitCreate } from "./origin";
+import { lookupProfile, profilesStub, recordBotBoard, recordProfileStats, type ProfilesStub } from "./profiles";
+import { isBoardLength } from "../lib/leaderboard";
+
+/** Stranger rooms: how long matched players get to connect. */
+/** Clients hold the match reveal until 12s of searching, so leave room to arrive. */
+const JOIN_WINDOW_MS = 25_000;
+/** Stranger rooms: 3-2-1 before the clock starts. */
+const COUNTDOWN_MS = 3_000;
+const JOIN_WINDOW = 10_000;
+const JOIN_MAX = 5;
 
 type InternalPlayer = {
   id: string;
@@ -52,13 +68,19 @@ type InternalPlayer = {
   connected: boolean;
   finishedAt: number | null;
   keyTimes: number[];
+  /** Applied keystrokes for the results graph (see ResultRow.keys). */
+  keyLog: KeyLogEntry[];
+  /** When this racer last typed a correct key (tiebreak: earlier wins). */
+  lastCorrectAt: number | null;
+  /** Profile id (humans only), for stats. */
+  pid?: string;
   lastProgressAt: number;
 };
 
 export default class RaceRoom implements Party.Server {
   options: Party.ServerOptions = { hibernate: false };
 
-  settings: RoomSettings = { time: 30, level: "medium" };
+  settings: RoomSettings = { time: 30, level: "easy" };
   mode: GameMode = "friends";
   status: RoomStatus = "lobby";
   passage = "";
@@ -70,9 +92,17 @@ export default class RaceRoom implements Party.Server {
   countdownEndsAt: number | null = null;
   autoStart = false;
   expectedHumans = 1;
+  /** Friends rooms: hard cap on humans (set by the creator). */
+  maxPlayers = FRIENDS_MAX;
   configured = false;
-  alarmKind: "end" | null = null;
+  alarmKind: "end" | "join" | "go" | null = null;
+  joinTimes = new Map<string, number[]>();
   aiTimers: ReturnType<typeof setTimeout>[] = [];
+
+  /** Cached room id: PartyKit forbids reading `room.id` inside onAlarm. */
+  roomCode = "";
+  /** Cached profiles stub: timed races end in onAlarm, where `context.parties` throws. */
+  profiles: ProfilesStub | null = null;
 
   constructor(readonly room: Party.Room) {}
 
@@ -85,9 +115,11 @@ export default class RaceRoom implements Party.Server {
   }
 
   async onRequest(req: Party.Request) {
+    this.roomCode = this.room.id;
+    this.profiles ??= profilesStub(this.room);
     const url = new URL(req.url);
     if (req.method === "POST" && url.pathname.endsWith("/setup")) {
-      if (!rateLimitCreate(clientIp(req))) {
+      if (!isInternal(req) && !rateLimitCreate(clientIp(req))) {
         return new Response("Slow down", { status: 429 });
       }
       const text = await req.text();
@@ -107,6 +139,8 @@ export default class RaceRoom implements Party.Server {
   }
 
   onConnect(connection: Party.Connection) {
+    this.roomCode = this.room.id;
+    this.profiles ??= profilesStub(this.room);
     if (!isValidRoomCode(this.room.id) && this.room.id.length > 32) {
       connection.send(encode({ type: "error", message: "Invalid room." }));
       connection.close();
@@ -122,30 +156,45 @@ export default class RaceRoom implements Party.Server {
     const data = asRecord(parsed);
     if (!data || typeof data.type !== "string") return;
 
-    if (data.type === "join") this.handleJoin(sender, data);
+    if (data.type === "join") void this.handleJoin(sender, data);
     else if (data.type === "start") this.handleStart(sender);
+    else if (data.type === "again") this.handleAgain(sender);
     else if (data.type === "fillAi") this.handleFillAi(sender, data);
     else if (data.type === "typed") this.handleTyped(sender, data);
     else if (data.type === "finish") this.handleFinish(sender);
   }
 
   onClose(connection: Party.Connection) {
+    this.joinTimes.delete(connection.id);
     const player = this.findByConnection(connection.id);
     if (!player || player.isAi) return;
     player.connected = false;
     player.connectionId = undefined;
     if (this.status === "lobby") {
       this.players.delete(player.id);
-      if (this.hostId === player.id) {
-        this.hostId = this.firstHuman()?.id ?? null;
-      }
+    }
+    // Host left: hand the room to the next racer still here.
+    if (this.hostId === player.id) {
+      this.hostId = this.firstHuman()?.id ?? null;
     }
     this.broadcastState();
   }
 
   async onAlarm() {
-    if (this.alarmKind === "end" && this.status === "racing") {
+    const kind = this.alarmKind;
+    this.alarmKind = null;
+    if (kind === "end" && this.status === "racing") {
       this.finishRace();
+    } else if (kind === "join" && this.status === "lobby") {
+      // Someone matched never showed up: race whoever is here.
+      const humans = this.connectedHumans();
+      if (humans.length === 0) return;
+      if (humans.length === 1 && ![...this.players.values()].some((p) => p.isAi)) {
+        this.fillAi = true;
+      }
+      this.beginCountdown();
+    } else if (kind === "go" && this.status === "countdown") {
+      this.go();
     }
   }
 
@@ -157,30 +206,42 @@ export default class RaceRoom implements Party.Server {
     this.autoStart = setup.autoStart;
     this.expectedHumans = setup.expectedHumans;
     this.fillAi = setup.fillAi;
-    if (setup.ai && !this.players.has(setup.ai.id)) {
-      this.players.set(setup.ai.id, {
-        id: setup.ai.id,
-        name: sanitizeName(setup.ai.name),
-        style: setup.ai.style,
-        color: setup.ai.color,
+    if (this.mode === "stranger" && this.autoStart) {
+      this.alarmKind = "join";
+      void this.room.storage.setAlarm(Date.now() + JOIN_WINDOW_MS);
+    }
+    for (const ai of [...(setup.ai ? [setup.ai] : []), ...(setup.ais ?? [])]) {
+      if (this.players.has(ai.id) || this.players.size >= ROOM_CAP) continue;
+      this.players.set(ai.id, {
+        id: ai.id,
+        name: sanitizeName(ai.name),
+        style: ai.style,
+        color: ai.color,
         isAi: true,
-        homeWpm: setup.ai.homeWpm,
+        homeWpm: ai.homeWpm,
         engine: createEngine(""),
         connected: true,
         finishedAt: null,
         keyTimes: [],
+        keyLog: [],
+        lastCorrectAt: null,
         lastProgressAt: 0,
       });
     }
     this.broadcastState();
   }
 
-  private handleJoin(sender: Party.Connection, data: Record<string, unknown>) {
+  private async handleJoin(sender: Party.Connection, data: Record<string, unknown>) {
     const existing = this.findByConnection(sender.id);
     if (existing) {
       this.sendState(sender);
       return;
     }
+    const nowJoin = Date.now();
+    const tries = (this.joinTimes.get(sender.id) ?? []).filter((t) => nowJoin - t < JOIN_WINDOW);
+    if (tries.length >= JOIN_MAX) return;
+    tries.push(nowJoin);
+    this.joinTimes.set(sender.id, tries);
 
     if (this.status !== "lobby") {
       sender.send(encode({ type: "error", message: "Race already moving." }));
@@ -188,16 +249,33 @@ export default class RaceRoom implements Party.Server {
     }
 
     const humans = [...this.players.values()].filter((p) => !p.isAi).length;
-    if (humans >= ROOM_CAP) {
+    const cap = this.mode === "stranger" && this.autoStart ? this.expectedHumans : this.capFor(data);
+    if (humans >= cap) {
       sender.send(encode({ type: "error", message: "Room is full." }));
       return;
     }
 
-    const name = sanitizeName(data.name, "");
-    if (name.length < 2) {
-      sender.send(encode({ type: "error", message: "Name is too short." }));
+    // Names come from the profile server, never from client text.
+    const profile = await lookupProfile(this.room, data.pid);
+    if (!profile) {
+      sender.send(encode({ type: "error", message: "Pick your racer name first." }));
       return;
     }
+    // State may have moved while we waited on the lookup.
+    if (this.findByConnection(sender.id)) return;
+    if (this.status !== "lobby") {
+      sender.send(encode({ type: "error", message: "Race already moving." }));
+      return;
+    }
+    if ([...this.players.values()].filter((p) => !p.isAi).length >= cap) {
+      sender.send(encode({ type: "error", message: "Room is full." }));
+      return;
+    }
+    if ([...this.players.values()].some((p) => p.pid === profile.id && p.connected)) {
+      sender.send(encode({ type: "error", message: "You are already in this race in another tab." }));
+      return;
+    }
+    const name = sanitizeName(profile.name, "racer");
     const style = isStyleId(data.style) ? data.style : "kelp";
     const color = isColorHex(data.color) ? data.color : COLORS[0];
 
@@ -206,6 +284,13 @@ export default class RaceRoom implements Party.Server {
       if (settings) this.settings = settings;
       if (isGameMode(data.mode)) this.mode = data.mode;
       if (typeof data.fillAi === "boolean") this.fillAi = data.fillAi;
+      if (this.mode === "friends") {
+        // No bots in friends rooms; the creator picks the room size.
+        this.fillAi = false;
+        if (typeof data.max === "number" && Number.isFinite(data.max)) {
+          this.maxPlayers = Math.max(FRIENDS_MIN, Math.min(FRIENDS_MAX, Math.round(data.max)));
+        }
+      }
       this.configured = true;
     }
 
@@ -221,7 +306,10 @@ export default class RaceRoom implements Party.Server {
       connected: true,
       finishedAt: null,
       keyTimes: [],
+      keyLog: [],
+        lastCorrectAt: null,
       lastProgressAt: 0,
+      pid: profile.id,
     };
     this.players.set(id, player);
     if (!this.hostId) this.hostId = id;
@@ -242,13 +330,56 @@ export default class RaceRoom implements Party.Server {
     const player = this.findByConnection(sender.id);
     if (!player || player.id !== this.hostId) return;
     if (this.status !== "lobby") return;
+    if (this.mode === "friends") {
+      // Friends: at least two racers, then the same 3-2-1 as Strangers.
+      if (this.connectedHumans().length < FRIENDS_MIN) return;
+      this.fillAi = false;
+      this.beginCountdown();
+      return;
+    }
     this.startRace();
+  }
+
+  /** Friends rooms: anyone on the results screen can take the room back to its lobby. */
+  private handleAgain(sender: Party.Connection) {
+    if (this.mode !== "friends" || this.status !== "results") return;
+    const player = this.findByConnection(sender.id);
+    if (!player) return;
+    for (const [id, p] of this.players) {
+      if (p.isAi || !p.connected) this.players.delete(id);
+    }
+    for (const p of this.players.values()) {
+      p.engine = createEngine("");
+      p.finishedAt = null;
+      p.keyTimes = [];
+      p.keyLog = [];
+      p.lastCorrectAt = null;
+      p.lastProgressAt = 0;
+    }
+    if (!this.hostId || !this.players.has(this.hostId)) this.hostId = this.firstHuman()?.id ?? null;
+    this.status = "lobby";
+    this.passage = "";
+    this.startedAt = null;
+    this.endsAt = null;
+    this.countdownEndsAt = null;
+    this.alarmKind = null;
+    this.broadcastState();
+  }
+
+  /** Human cap for a join: friends rooms use the creator's size. */
+  private capFor(data: Record<string, unknown>) {
+    const mode = this.configured ? this.mode : isGameMode(data.mode) ? data.mode : this.mode;
+    if (mode !== "friends") return ROOM_CAP;
+    if (this.configured) return this.maxPlayers;
+    return typeof data.max === "number" && Number.isFinite(data.max)
+      ? Math.max(FRIENDS_MIN, Math.min(FRIENDS_MAX, Math.round(data.max)))
+      : FRIENDS_MAX;
   }
 
   private handleTyped(sender: Party.Connection, data: Record<string, unknown>) {
     if (this.status !== "racing") return;
     const player = this.findByConnection(sender.id);
-    if (!player || player.isAi || player.engine.finished) return;
+    if (!player || player.isAi || !player.connected || player.engine.finished) return;
     if (typeof data.keys !== "string") return;
     const keys = data.keys.slice(0, MAX_KEYS_PER_BATCH);
     const now = Date.now();
@@ -257,7 +388,9 @@ export default class RaceRoom implements Party.Server {
     for (const char of keys) {
       if (player.keyTimes.length >= MAX_KEYS_PER_SEC) break;
       player.keyTimes.push(now);
-      applyKey(player.engine, char === "\b" ? "Backspace" : char);
+      const hit = applyKey(player.engine, char === "\b" ? "Backspace" : char);
+      if (hit === "correct") player.lastCorrectAt = now;
+      this.logKey(player, now, char);
       if (player.engine.finished) {
         player.finishedAt = now;
         break;
@@ -281,14 +414,36 @@ export default class RaceRoom implements Party.Server {
   private maybeAutoStart() {
     if (!this.autoStart || this.status !== "lobby") return;
     const humans = [...this.players.values()].filter((p) => !p.isAi).length;
-    if (humans >= Math.max(1, this.expectedHumans)) this.startRace();
+    if (humans < Math.max(1, this.expectedHumans)) return;
+    if (this.mode === "stranger") this.beginCountdown();
+    else this.startRace();
   }
 
-  private startRace() {
+  /** Stranger rooms: same passage to everyone, 3-2-1, then a server-set start. */
+  private beginCountdown() {
     if (this.status !== "lobby") return;
+    this.preparePassage();
+    const now = Date.now();
+    this.status = "countdown";
+    this.countdownEndsAt = now + COUNTDOWN_MS;
+    this.alarmKind = "go";
+    void this.room.storage.setAlarm(this.countdownEndsAt);
+    this.broadcastState();
+  }
+
+  private go() {
+    const now = this.countdownEndsAt ?? Date.now();
+    this.status = "racing";
+    this.countdownEndsAt = null;
+    this.startedAt = null;
+    this.armClock(now);
+    if (this.allDone()) this.finishRace();
+  }
+
+  private preparePassage() {
     if (this.fillAi) this.ensureFillAi();
 
-    const rng = mulberry32(hashSeed(`${this.room.id}:${Date.now()}`));
+    const rng = mulberry32(hashSeed(`${this.roomCode}:${Date.now()}`));
     const extras = {
       punctuation: this.settings.punctuation === true,
       numbers: this.settings.numbers === true,
@@ -304,6 +459,8 @@ export default class RaceRoom implements Party.Server {
         : generatePassage({
             level: this.settings.level,
             time: this.settings.time,
+            // Long enough that even a ~150 wpm racer can't run out of words.
+            minChars: Math.round(this.settings.time * 12.5),
             rng,
             extras,
           });
@@ -311,7 +468,14 @@ export default class RaceRoom implements Party.Server {
       player.engine = createEngine(this.passage);
       player.finishedAt = null;
       player.keyTimes = [];
+      player.keyLog = [];
+      player.lastCorrectAt = null;
     }
+  }
+
+  private startRace() {
+    if (this.status !== "lobby") return;
+    this.preparePassage();
     this.status = "racing";
     this.startedAt = null;
     this.endsAt = null;
@@ -342,6 +506,28 @@ export default class RaceRoom implements Party.Server {
     this.clearAis();
     const endedAt = Date.now();
     const results = this.computeResults(endedAt);
+    // Leaderboard: timed Strangers races only. Bot racers' real results count
+    // under their (pooled, reused) name; humans count with bot-filled seats too.
+    const length = String(this.settings.time);
+    const ranked =
+      this.mode === "stranger" &&
+      this.settings.goal !== "words" &&
+      !this.settings.punctuation &&
+      !this.settings.numbers &&
+      isBoardLength(length);
+    for (const row of results) {
+      const p = this.players.get(row.id);
+      if (p?.isAi && ranked && row.finished && !row.flagged && !row.left && row.wpm > 0) {
+        void recordBotBoard(this.profiles, p.name, row.wpm, { length, level: this.settings.level, acc: row.accuracy });
+        continue;
+      }
+      if (p?.pid && !p.isAi && !row.flagged && !row.left && row.wpm > 0) {
+        const board = ranked && row.finished
+          ? { length, level: this.settings.level, acc: row.accuracy }
+          : undefined;
+        void recordProfileStats(this.profiles, p.pid, row.wpm, board);
+      }
+    }
     this.broadcast({ type: "results", results, endedAt });
     this.broadcastState();
   }
@@ -352,19 +538,22 @@ export default class RaceRoom implements Party.Server {
       if (!player.isAi) continue;
       const rng = mulberry32(hashSeed(`${player.id}:${this.passage}`));
       const wpm = targetWpm(player.homeWpm ?? 50, rng);
-      const strokes = buildStrokes({
-        passage: this.passage,
-        targetWpm: wpm,
-        level: this.settings.level,
+      const strokes = withTypos(
+        buildStrokes({
+          passage: this.passage,
+          targetWpm: wpm,
+          level: this.settings.level,
+          rng,
+        }),
         rng,
-      });
+      );
       this.runAi(player, strokes, 0, 0);
     }
   }
 
   private runAi(
     player: InternalPlayer,
-    strokes: Stroke[],
+    strokes: AiStroke[],
     i: number,
     elapsed: number,
   ) {
@@ -372,10 +561,21 @@ export default class RaceRoom implements Party.Server {
     const stroke = strokes[i]!;
     const timer = setTimeout(() => {
       if (this.status !== "racing") return;
-      if (stroke.kind === "char" && !player.engine.finished) {
+      if (stroke.kind !== "stall" && !player.engine.finished) {
+        const now = Date.now();
         const expected = expectedChar(player.engine);
-        if (expected) applyKey(player.engine, expected);
-        if (player.engine.finished) player.finishedAt = Date.now();
+        let key: string | null = null;
+        if (stroke.kind === "backspace") key = "\b";
+        else if (stroke.kind === "typo") {
+          // Slip onto a neighbouring letter; never on spaces.
+          key = expected && expected !== " " ? stroke.wrong === expected ? "e" : stroke.wrong : expected;
+        } else key = expected;
+        if (key) {
+          const hit = applyKey(player.engine, key === "\b" ? "Backspace" : key);
+          if (hit === "correct") player.lastCorrectAt = now;
+          this.logKey(player, now, key);
+        }
+        if (player.engine.finished) player.finishedAt = now;
         this.emitProgress(player, Date.now());
         if (this.allDone()) {
           this.finishRace();
@@ -395,8 +595,8 @@ export default class RaceRoom implements Party.Server {
   private ensureFillAi() {
     const hasAi = [...this.players.values()].some((p) => p.isAi);
     if (hasAi) return;
-    const rng = mulberry32(hashSeed(`fill:${this.room.id}`));
-    const id = `kelp-fill-${this.room.id.slice(0, 6)}`;
+    const rng = mulberry32(hashSeed(`fill:${this.roomCode}`));
+    const id = `kelp-fill-${this.roomCode.slice(0, 6)}`;
     this.players.set(id, {
       id,
       name: "Sable",
@@ -408,8 +608,15 @@ export default class RaceRoom implements Party.Server {
       connected: true,
       finishedAt: null,
       keyTimes: [],
+      keyLog: [],
+        lastCorrectAt: null,
       lastProgressAt: 0,
     });
+  }
+
+  private logKey(player: InternalPlayer, now: number, key: string) {
+    if (!this.startedAt || player.keyLog.length >= MAX_KEY_LOG) return;
+    player.keyLog.push([Math.max(0, now - this.startedAt), key]);
   }
 
   private emitProgress(player: InternalPlayer, now: number) {
@@ -433,38 +640,96 @@ export default class RaceRoom implements Party.Server {
 
   private computeResults(endedAt: number): ResultRow[] {
     const started = this.startedAt ?? endedAt;
-    const rows = [...this.players.values()].map((player) => {
+    const words = this.settings.goal === "words";
+    const scored = [...this.players.values()].map((player) => {
       const stop = Math.min(player.finishedAt ?? endedAt, endedAt);
       const minutes = Math.max((stop - started) / 60000, 1 / 60);
-      return {
+      const e = player.engine;
+      const row: ResultRow = {
         id: player.id,
         name: player.name,
         style: player.style,
         color: player.color,
-        wpm: calcWpm(player.engine.correctChars, minutes),
-        accuracy: calcAccuracy(player.engine.correctChars, player.engine.totalChars),
-        progress: progressOf(player.engine),
-        errors: player.engine.errors,
+        wpm: calcWpm(e.netChars, minutes),
+        rawWpm: calcWpm(e.totalChars, minutes),
+        left: !player.isAi && !player.connected && !e.finished,
+        flagged: false,
+        elapsed: Math.round(minutes * 60 * 1000) / 1000,
+        accuracy: calcAccuracy(e.correctChars, e.totalChars),
+        progress: progressOf(e),
+        errors: e.errors,
+        keys: player.keyLog as KeyLogEntry[] | undefined,
         place: 0,
-        finished: player.engine.finished,
+        // Timed races: anyone still racing when the clock runs out finished.
+        finished: e.finished || (!words && (player.isAi || player.connected)),
       };
+      // Unrounded numbers for ranking; the row keeps the display values.
+      const exact = {
+        net: e.netChars / 5 / minutes,
+        acc: e.correctChars / Math.max(1, e.totalChars),
+        correct: e.correctChars,
+        errors: e.errors,
+        raw: e.totalChars / 5 / minutes,
+        lastCorrect: player.lastCorrectAt ?? Number.POSITIVE_INFINITY,
+        finishAt: player.finishedAt ?? Number.POSITIVE_INFINITY,
+        progress: progressOf(e),
+      };
+      // Rate limits make this near-impossible; never rank it if it happens.
+      if (row.wpm > MAX_PLAUSIBLE_WPM || row.rawWpm > MAX_PLAUSIBLE_WPM * 1.5) {
+        row.flagged = true;
+        row.wpm = 0;
+        row.rawWpm = 0;
+        row.finished = false;
+        row.keys = undefined;
+      }
+      return { row, exact };
     });
-    rows.sort((a, b) => {
-      if (a.finished !== b.finished) return a.finished ? -1 : 1;
-      if (a.progress !== b.progress) return b.progress - a.progress;
-      if (a.wpm !== b.wpm) return b.wpm - a.wpm;
-      return a.errors - b.errors;
+    type Scored = (typeof scored)[number];
+    const EPS = 1e-9;
+    const desc = (x: number, y: number) => (Math.abs(x - y) < EPS ? 0 : y - x);
+    const asc = (x: number, y: number) => (x === y ? 0 : x - y);
+    /** 0 only when every measure is identical: a genuine tie. */
+    const compare = (a: Scored, b: Scored): number => {
+      const ra = a.row;
+      const rb = b.row;
+      if (!!ra.flagged !== !!rb.flagged) return ra.flagged ? 1 : -1;
+      if (!!ra.left !== !!rb.left) return ra.left ? 1 : -1;
+      if (ra.finished !== rb.finished) return ra.finished ? -1 : 1;
+      if (words) {
+        // Finish order first, then how far the unfinished got.
+        const byFinish = asc(a.exact.finishAt, b.exact.finishAt);
+        if (byFinish) return byFinish;
+        const byProgress = desc(a.exact.progress, b.exact.progress);
+        if (byProgress) return byProgress;
+      }
+      return (
+        desc(a.exact.net, b.exact.net) ||
+        desc(a.exact.acc, b.exact.acc) ||
+        desc(a.exact.correct, b.exact.correct) ||
+        asc(a.exact.errors, b.exact.errors) ||
+        desc(a.exact.raw, b.exact.raw) ||
+        asc(a.exact.lastCorrect, b.exact.lastCorrect)
+      );
+    };
+    scored.sort(compare);
+    // Standard competition ranking: a genuine tie shares a place (1, 1, 3).
+    scored.forEach((item, i) => {
+      const prev = scored[i - 1];
+      if (prev && compare(prev, item) === 0) {
+        item.row.place = prev.row.place;
+        item.row.tied = true;
+        prev.row.tied = true;
+      } else {
+        item.row.place = i + 1;
+      }
     });
-    rows.forEach((row, i) => {
-      row.place = i + 1;
-    });
-    return rows;
+    return scored.map((item) => item.row);
   }
 
   private snapshot(connectionId?: string): RoomState {
     const you = connectionId ? this.findByConnection(connectionId) : undefined;
     return {
-      code: this.room.id,
+      code: this.roomCode,
       mode: this.mode,
       status: this.status,
       settings: this.settings,
@@ -476,6 +741,9 @@ export default class RaceRoom implements Party.Server {
       endsAt: this.endsAt,
       countdownEndsAt: this.countdownEndsAt,
       youAreHost: you?.id === this.hostId,
+      serverNow: Date.now(),
+      expectedHumans: this.expectedHumans,
+      maxPlayers: this.mode === "friends" ? this.maxPlayers : undefined,
     };
   }
 
@@ -498,6 +766,10 @@ export default class RaceRoom implements Party.Server {
       if (player.connectionId === connectionId) return player;
     }
     return undefined;
+  }
+
+  private connectedHumans() {
+    return [...this.players.values()].filter((p) => !p.isAi && p.connected);
   }
 
   private firstHuman() {
@@ -553,25 +825,50 @@ function parseSetup(raw: unknown): SetupPayload | null {
         : 1,
     fillAi: data.fillAi === true,
   };
-  const ai = asRecord(data.ai);
-  if (ai) {
-    const name = sanitizeName(ai.name, "");
-    if (
-      name &&
-      isStyleId(ai.style) &&
-      isColorHex(ai.color) &&
-      typeof ai.homeWpm === "number"
-    ) {
-      payload.ai = {
-        id: typeof ai.id === "string" ? ai.id.slice(0, 40) : `ai-${name}`,
-        name,
-        style: ai.style,
-        color: ai.color,
-        homeWpm: Math.max(10, Math.min(200, ai.homeWpm)),
-      };
-    }
+  const ai = parseAi(data.ai);
+  if (ai) payload.ai = ai;
+  if (Array.isArray(data.ais)) {
+    payload.ais = data.ais
+      .slice(0, ROOM_CAP - 1)
+      .map(parseAi)
+      .filter((v): v is NonNullable<typeof v> => !!v);
   }
   return payload;
 }
 
+function parseAi(raw: unknown): SetupAi | null {
+  const ai = asRecord(raw);
+  if (!ai) return null;
+  const name = sanitizeName(ai.name, "");
+  if (!name || !isStyleId(ai.style) || !isColorHex(ai.color) || typeof ai.homeWpm !== "number") {
+    return null;
+  }
+  return {
+    id: typeof ai.id === "string" ? ai.id.slice(0, 40) : `ai-${name}`,
+    name,
+    style: ai.style,
+    color: ai.color,
+    homeWpm: Math.max(10, Math.min(200, ai.homeWpm)),
+  };
+}
 
+
+
+type AiStroke = Stroke | { kind: "typo"; wait: number; wrong: string } | { kind: "backspace"; wait: number };
+
+const LETTERS = "etaoinshrdlucmfwypvbgk";
+
+/** Bots slip now and then and fix it, like a person (about 1 in 40 keys). */
+function withTypos(strokes: Stroke[], rng: () => number): AiStroke[] {
+  const out: AiStroke[] = [];
+  for (const stroke of strokes) {
+    if (stroke.kind === "char" && rng() < 0.025) {
+      out.push({ kind: "typo", wait: stroke.wait, wrong: LETTERS[Math.floor(rng() * LETTERS.length)]! });
+      out.push({ kind: "backspace", wait: 140 + rng() * 220 });
+      out.push({ kind: "char", wait: 90 + rng() * 120 });
+      continue;
+    }
+    out.push(stroke);
+  }
+  return out;
+}

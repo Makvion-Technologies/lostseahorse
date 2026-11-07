@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* PartyKit's local dev state (locked SQLite files) must not be scanned for classes. */
+@source not "../.partykit";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -76,6 +78,12 @@
   --glow: rgba(42, 107, 106, 0.18);
   --ray: rgba(180, 150, 90, 0.08);
   --caret: #2a6b6a;
+  --wpm: #1e8a4a;
+  /* Strangers placings: solid steps from 1st teal, then red for lost. */
+  --place-1: #2a6b6a;
+  --place-2: #6b7682;
+  --place-3: #9a6236;
+  --place-lost: #a2413a;
 }
 
 .dark {
@@ -91,6 +99,35 @@
   --glow: rgba(110, 211, 199, 0.12);
   --ray: rgba(224, 178, 90, 0.06);
   --caret: #6ed3c7;
+  --wpm: #4ade80;
+  --place-1: #6ed3c7;
+  --place-2: #b8c2cc;
+  --place-3: #c8956a;
+  --place-lost: #c4605a;
+}
+
+/* Re-skin everything teal inside (steps, cards, SoloResults) to a placing. */
+.place-theme-1,
+.place-theme-2,
+.place-theme-3,
+.place-theme-lost {
+  --teal: var(--place-tone);
+  --caret: var(--place-tone);
+  /* Strangers results only: WPM follows the placing instead of green. */
+  --wpm: var(--place-tone);
+  --glow: color-mix(in srgb, var(--place-tone) 16%, transparent);
+}
+.place-theme-1 {
+  --place-tone: var(--place-1);
+}
+.place-theme-2 {
+  --place-tone: var(--place-2);
+}
+.place-theme-3 {
+  --place-tone: var(--place-3);
+}
+.place-theme-lost {
+  --place-tone: var(--place-lost);
 }
 
 @theme inline {
@@ -100,6 +137,7 @@
   --color-foam: var(--foam);
   --color-coral: var(--coral);
   --color-teal: var(--teal);
+  --color-wpm: var(--wpm);
   --color-amber: var(--amber);
   --color-card: var(--card);
   --color-line: var(--line);
@@ -108,9 +146,50 @@
   --font-sans: var(--font-sans);
 }
 
-html[data-typing-focus="1"] .header-extras {
+@theme {
+  --breakpoint-xs: 22.5rem;
+  --breakpoint-3xl: 120rem;
+}
+
+/* Scale the whole UI up a touch on very large displays (1920px+, 2560px+). */
+@media (min-width: 1920px) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
+@media (min-width: 2400px) {
+  html {
+    font-size: 125%;
+  }
+}
+
+html,
+body {
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.header-logo,
+.header-extras,
+.site-footer {
+  transition: opacity 0.3s ease;
+}
+
+html[data-typing-focus="1"] .header-logo,
+html[data-typing-focus="1"] .header-extras,
+html[data-typing-focus="1"] .site-footer {
   opacity: 0;
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-logo,
+  .header-extras,
+  .site-footer {
+    transition: none;
+  }
 }
 
 html {
@@ -359,6 +438,40 @@ button:disabled {
   .bubble,
   .caret,
   .finish-mote {
+    animation: none !important;
+  }
+}
+
+/* ---------- results poster ---------- */
+@custom-variant short (@media (max-height: 44rem));
+@custom-variant tiny (@media (max-height: 36rem));
+@custom-variant wide (@media (min-width: 48rem) and (min-aspect-ratio: 4/3));
+
+.sh-fin {
+  transform-box: fill-box;
+  transform-origin: 100% 50%;
+  animation: sh-fin 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes sh-fin {
+  to {
+    transform: scaleX(0.72);
+  }
+}
+
+.sh-lantern {
+  animation: sh-lantern 2.4s ease-in-out infinite;
+}
+
+@keyframes sh-lantern {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-fin,
+  .sh-lantern {
     animation: none !important;
   }
 }

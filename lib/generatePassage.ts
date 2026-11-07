@@ -99,14 +99,18 @@ export function generatePassage(opts: {
   time: TimeLimit;
   rng: () => number;
   extras?: WordExtras;
+  /** Races: never shorter than this (raises the usual cap). */
+  minChars?: number;
 }): string {
   const preset = TARGET_CHARS[opts.time];
-  const target = preset
+  const maxChars = Math.max(MAX_CHARS, opts.minChars ?? 0);
+  const base = preset
     ? preset[opts.level]
     : Math.min(
         MAX_CHARS,
         Math.round((TARGET_CHARS[60][opts.level] * opts.time) / 60),
       );
+  const target = Math.max(base, opts.minChars ?? 0);
   const words: string[] = [];
   let chars = 0;
 
@@ -114,11 +118,11 @@ export function generatePassage(opts: {
   while (chars < target) {
     const word = nextWord(opts.level, opts.extras, opts.rng, previous);
     const extra = words.length === 0 ? word.length : word.length + 1;
-    if (chars + extra > MAX_CHARS) break;
+    if (chars + extra > maxChars) break;
     words.push(word);
     previous = word;
     chars += extra;
-    if (words.length > 120) break;
+    if (words.length > Math.max(120, maxChars / 3)) break;
   }
 
   if (words.length === 0) {

@@ -10,7 +10,7 @@ export const SETUP_KEY = "lostseahorse.setup";
 
 export const DEFAULT_SETUP = {
   time: 30 as TimeLimit,
-  level: "medium" as const,
+  level: "easy" as const,
   extras: { punctuation: false, numbers: false },
   goal: "time" as const,
 };

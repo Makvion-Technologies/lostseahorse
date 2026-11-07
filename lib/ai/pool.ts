@@ -1,6 +1,7 @@
 import { COLORS, STYLES, type ColorHex, type Level, type StyleId } from "../types";
 import { bandRange, firstVisitAiRange, type WpmBand } from "../bands";
 import { pick, randFloat } from "../rng";
+import { BOT_NAMES } from "../racerNames";
 
 export type AiRacer = {
   id: string;
@@ -10,16 +11,7 @@ export type AiRacer = {
   homeWpm: number;
 };
 
-const NAMES = [
-  "Mara", "Jonah", "Sable", "Wren", "Theo", "Ines", "Cole", "Nia",
-  "Ellis", "Priya", "Omar", "June", "Felix", "Hana", "Rhys", "Ada",
-  "Nico", "Leila", "Quinn", "Yasmin", "Hugo", "Freya", "Amir", "Cleo",
-  "Silas", "Noor", "Pavel", "Iris", "Mateo", "Sage", "Anika", "Lars",
-  "Vera", "Kian", "Dalia", "Owen", "Mina", "Reza", "Tess", "Yuki",
-  "Camille", "Arlo", "Soren", "Bea", "Malik", "Imani", "Luca", "Petra",
-  "Devi", "Callum", "Aisha", "Niels", "Rosa", "Kenji", "Esme", "Farid",
-  "Lila", "Tomas", "Gita", "Eoin", "Nadia", "Haruki", "Sable.", "Wynn",
-] as const;
+const NAMES = BOT_NAMES;
 
 const WPMS = [
   22, 26, 28, 31, 33, 36, 38, 41, 43, 45, 47, 48, 50, 52, 54, 55,

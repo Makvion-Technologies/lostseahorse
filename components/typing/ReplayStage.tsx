@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { TypingPane } from "./TypingPane";
+import { SheetCloseButton } from "@/components/results/ResultsPoster";
+import { typingColumnWidth } from "@/components/site/SiteShell";
 import { applyKey, createEngine, type TypingEngine } from "@/lib/typing";
 import { formatClock } from "@/lib/formatTime";
 import type { ReplayEvent } from "@/lib/runStats";
@@ -21,35 +23,34 @@ export function ReplayStage({
   events,
   setTime,
   goal,
+  title = "Replay",
   onClose,
 }: {
+  title?: string;
+  onClose?: () => void;
   passage: string;
   events: ReplayEvent[];
   setTime: number;
   goal: GoalMode;
-  onClose: () => void;
 }) {
   const [engine, setEngine] = useState(() => createEngine(passage, 0, false));
   const [playing, setPlaying] = useState(false);
   const [done, setDone] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [paneWidth, setPaneWidth] = useState<number | null>(null);
   const playRef = useRef(false);
+
+  useEffect(() => {
+    const measure = () =>
+      setPaneWidth(typingColumnWidth(document.documentElement.clientWidth));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
   const liveRef = useRef<TypingEngine>(createEngine(passage, 0, false));
   const indexRef = useRef(0);
   const originRef = useRef(0);
   const elapsedRef = useRef(0);
-
-  useEffect(() => {
-    const fresh = createEngine(passage, 0, false);
-    liveRef.current = fresh;
-    indexRef.current = 0;
-    elapsedRef.current = 0;
-    playRef.current = false;
-    setEngine(cloneEngine(fresh));
-    setPlaying(false);
-    setDone(false);
-    setElapsed(0);
-  }, [passage]);
 
   const duration =
     goal === "time" && setTime > 0
@@ -130,8 +131,8 @@ export function ReplayStage({
         : formatClock(elapsed);
 
   return (
-    <div className="flex flex-col gap-6 pb-8">
-      <div className="grid grid-cols-3 items-center px-1 py-8 sm:py-10">
+    <div className="flex flex-col gap-4 pb-8 sm:gap-6">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
         <button
           type="button"
           aria-label={done ? "Retry replay" : playing ? "Pause replay" : "Play replay"}
@@ -166,23 +167,18 @@ export function ReplayStage({
             </svg>
           )}
         </button>
-        <p className="text-center font-sans text-3xl tabular-nums tracking-wide sm:text-4xl">
-          {clock}
-        </p>
-        <button
-          type="button"
-          aria-label="Close replay"
-          onClick={() => {
-            playRef.current = false;
-            setPlaying(false);
-            onClose();
-          }}
-          className="justify-self-end flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl text-2xl leading-none text-coral ring-1 ring-coral/35 outline-none hover:bg-coral/10 focus-visible:ring-2 focus-visible:ring-coral"
-        >
-          ×
-        </button>
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-center text-xs uppercase tracking-[0.2em] text-muted">{title}</p>
+          <p className="text-center font-sans text-3xl tabular-nums tracking-wide sm:text-4xl">
+            {clock}
+          </p>
+        </div>
+        {onClose ? <SheetCloseButton onClose={onClose} /> : <span aria-hidden />}
       </div>
-      <div className="w-full">
+      <div
+        className="max-w-full"
+        style={paneWidth ? { width: paneWidth } : undefined}
+      >
         <TypingPane engine={engine} chrome={false} />
       </div>
     </div>
