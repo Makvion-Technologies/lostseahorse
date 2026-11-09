@@ -1,6 +1,9 @@
 <div align="center">
 
-# lost seahorse
+<h1>
+  <img src="app/icon.png" alt="" width="44" height="44" />
+  lost seahorse
+</h1>
 
 **A calm, no-login typing game. Practice solo or race strangers and friends in real time.**
 
