@@ -1,7 +1,7 @@
 <div align="center">
 
-<h1>
-  <img src="app/icon.png" alt="" width="44" height="44" />
+<h1 align="center">
+  <img src=".github/assets/readme-logo.png" alt="" height="48" />
   lost seahorse
 </h1>
 
