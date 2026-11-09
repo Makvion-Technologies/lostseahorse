@@ -47,3 +47,14 @@ next-env.d.ts
 # cloudflare (wrangler dev state, local secrets)
 .wrangler
 .dev.vars*
+
+# Local AI tooling
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.cursor/
+.claude/
+.cursorrules
+.windsurfrules
+.github/copilot-instructions.md
+**/copilot-instructions.md
