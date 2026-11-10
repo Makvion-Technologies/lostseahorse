@@ -1,0 +1,13 @@
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    uses: Makvion-Technologies/.github/.github/workflows/dependency-review.yml@main
+

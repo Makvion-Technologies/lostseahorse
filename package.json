@@ -9,7 +9,8 @@
     "party:check": "tsc -p party",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit && tsc -p party"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

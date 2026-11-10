@@ -1,0 +1,42 @@
+
+# Path labels for Makvion product repos. Keep in sync across repos.
+ui:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/components/**"
+          - "**/ui/**"
+          - "**/app/**/*.tsx"
+          - "**/app/**/*.css"
+          - "**/src/**/*.tsx"
+          - "**/src/**/*.css"
+
+api:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/api/**"
+          - "**/app/api/**"
+          - "**/src/app/api/**"
+          - "**/party/**"
+          - "**/prisma/**"
+          - "**/lib/**"
+          - "**/src/lib/**"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "**/docs/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+deps:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "package-lock.json"
+          - "pnpm-lock.yaml"
+          - "yarn.lock"
+
